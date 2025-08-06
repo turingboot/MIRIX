@@ -10,6 +10,20 @@ from tqdm import tqdm
 from mirix.agent.app_constants import TEMPORARY_MESSAGE_LIMIT, GEMINI_MODELS, SKIP_META_MEMORY_MANAGER
 from mirix.constants import CHAINING_FOR_MEMORY_UPDATE
 from mirix.voice_utils import process_voice_files, convert_base64_to_audio_segment
+from mirix.agent.app_utils import encode_image
+
+def get_image_mime_type(image_path):
+    """Get MIME type for image files."""
+    if image_path.lower().endswith(('.png', '.PNG')):
+        return 'image/png'
+    elif image_path.lower().endswith(('.jpg', '.jpeg', '.JPG', '.JPEG')):
+        return 'image/jpeg'
+    elif image_path.lower().endswith(('.gif', '.GIF')):
+        return 'image/gif'
+    elif image_path.lower().endswith(('.webp', '.WEBP')):
+        return 'image/webp'
+    else:
+        return 'image/png'  # Default fallback
 
 class TemporaryMessageAccumulator:
     """
@@ -357,7 +371,8 @@ class TemporaryMessageAccumulator:
                                     # Already uploaded file reference
                                     processed_image_uris.append(file_ref)
                             else:
-                                raise NotImplementedError("Non-GEMINI models do not support file uploads")
+                                # For non-GEMINI models: store the image URI directly for base64 conversion later
+                                processed_image_uris.append(file_ref)
                         
                         if has_pending_uploads:
                             # Keep for next cycle if any uploads are still pending
@@ -472,6 +487,7 @@ class TemporaryMessageAccumulator:
     
     def _build_memory_message(self, ready_to_process, voice_content):
         """Build the message content for memory agents."""
+
         # Collect content organized by source
         images_by_source = {}  # source_name -> [(timestamp, file_refs)]
         text_content = []
@@ -541,10 +557,32 @@ class TemporaryMessageAccumulator:
                         'text': f"Timestamp: {timestamp}"
                     })
                     
-                    message_parts.append({
-                        'type': 'google_cloud_file_uri',
-                        'google_cloud_file_uri': file_ref.uri
-                    })
+                    # Handle different types of file references
+                    if hasattr(file_ref, 'uri'):
+                        # GEMINI models: use Google Cloud file URI
+                        message_parts.append({
+                            'type': 'google_cloud_file_uri',
+                            'google_cloud_file_uri': file_ref.uri
+                        })
+                    else:
+                        # OpenAI models: convert to base64
+                        try:
+                            mime_type = get_image_mime_type(file_ref)
+                            base64_data = encode_image(file_ref)
+                            message_parts.append({
+                                'type': 'image_data',
+                                'image_data': {
+                                    'data': f"data:{mime_type};base64,{base64_data}",
+                                    'detail': 'auto'
+                                }
+                            })
+                        except Exception as e:
+                            self.logger.error(f"Failed to encode image {file_ref}: {e}")
+                            # Add a text message indicating the image couldn't be processed
+                            message_parts.append({
+                                'type': 'text',
+                                'text': f"[Image at {file_ref} could not be processed]"
+                            })
         
         # Add voice transcription if any
         if voice_transcription:

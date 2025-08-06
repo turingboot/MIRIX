@@ -1548,7 +1548,21 @@ Please perform this analysis and create new memories as appropriate. Provide a d
                                 'google_cloud_file_uri': file_ref.uri
                             })
                         else:
-                            raise NotImplementedError("Local file paths are not supported for chat context")
+                            # For non-GEMINI models, convert local file paths to base64
+                            try:
+                                mime_type = get_image_mime_type(file_ref)
+                                base64_data = encode_image(file_ref)
+                                extra_messages.append({
+                                    'type': 'image_data',
+                                    'image_data': {
+                                        'data': f"data:{mime_type};base64,{base64_data}",
+                                        'detail': 'auto'
+                                    }
+                                })
+                            except Exception as e:
+                                self.logger.error(f"Failed to encode image for chat context: {file_ref}, error: {e}")
+                                # Skip this image if encoding fails
+                                continue
                     
                     extra_messages.append({
                         'type': 'text',
@@ -1695,7 +1709,7 @@ Please perform this analysis and create new memories as appropriate. Provide a d
             # Save to database using provider_manager
             try:
                 # Create or update the Google AI provider in the database
-                self.client.server.provider_manager.insert_provider(
+                self.client.server.provider_manager.upsert_provider(
                     name="google_ai",
                     api_key=api_key,
                     organization_id=self.client.user.organization_id,
@@ -1734,7 +1748,7 @@ Please perform this analysis and create new memories as appropriate. Provide a d
             # Save to database using provider_manager
             try:
                 # Create or update the OpenAI provider in the database
-                self.client.server.provider_manager.insert_provider(
+                self.client.server.provider_manager.upsert_provider(
                     name="openai",
                     api_key=api_key,
                     organization_id=self.client.user.organization_id,
@@ -1754,7 +1768,7 @@ Please perform this analysis and create new memories as appropriate. Provide a d
             # Save to database using provider_manager
             try:
                 # Create or update the Anthropic provider in the database
-                self.client.server.provider_manager.insert_provider(
+                self.client.server.provider_manager.upsert_provider(
                     name="anthropic",
                     api_key=api_key,
                     organization_id=self.client.user.organization_id,
