@@ -32,11 +32,14 @@ const ScreenshotMonitor = ({ settings, onMonitoringStatusChange }) => {
   const abortControllerRef = useRef(null);
   const sourceLastImageDataRef = useRef({}); // Store last image data per source
   const lastCaptureTimeRef = useRef(0); // Track last capture time
+  const lastVisibilityCheckRef = useRef(0); // Track last visibility check time
+  const cachedVisibleSourcesRef = useRef(null); // Cache visible sources
 
   // Configuration (matches main.py defaults)
-  const BASE_INTERVAL = 1500; // 1.5 seconds base interval
+  const BASE_INTERVAL = 3000; // 1.5 seconds base interval
   const MULTI_APP_INTERVAL = 3000; // 3 seconds for multiple apps
   const SIMILARITY_THRESHOLD = 0.99;
+  const VISIBILITY_CHECK_INTERVAL = 2000; // Check visibility every 2 seconds max (was 500ms - too frequent!)
 
   // Check screenshot permissions
   const checkScreenPermissions = useCallback(async () => {
@@ -367,6 +370,51 @@ const ScreenshotMonitor = ({ settings, onMonitoringStatusChange }) => {
     }
   }, [settings.serverUrl, isRequestInProgress]);
 
+  // Check which sources are visible (with caching)
+  const checkVisibleSources = useCallback(async (sources) => {
+    const now = Date.now();
+    const timeSinceLastCheck = now - lastVisibilityCheckRef.current;
+    
+    // Use cached visibility if recent enough
+    if (cachedVisibleSourcesRef.current && timeSinceLastCheck < VISIBILITY_CHECK_INTERVAL) {
+      return cachedVisibleSourcesRef.current;
+    }
+    
+    try {
+      // Get visibility for selected sources
+      const sourceIds = sources.map(s => s.id);
+      const result = await window.electronAPI.getVisibleSources(sourceIds);
+      
+      // Also get ALL visible sources for logging
+      const allVisibleResult = await window.electronAPI.getVisibleSources();
+      
+      if (result.success) {
+        const visibleMap = {};
+        result.sources.forEach(s => {
+          visibleMap[s.id] = s.isVisible;
+        });
+        
+        // Store all visible sources for logging
+        if (allVisibleResult.success) {
+          visibleMap._allVisible = allVisibleResult.sources;
+        }
+        
+        cachedVisibleSourcesRef.current = visibleMap;
+        lastVisibilityCheckRef.current = now;
+        return visibleMap;
+      }
+    } catch (error) {
+      console.error('[ScreenshotMonitor] Error checking visibility:', error);
+    }
+    
+    // If check fails, assume all are visible (fallback)
+    const fallbackMap = {};
+    sources.forEach(s => {
+      fallbackMap[s.id] = true;
+    });
+    return fallbackMap;
+  }, []);
+
   // Take and process a screenshot
   const processScreenshot = useCallback(async () => {
     
@@ -385,29 +433,47 @@ const ScreenshotMonitor = ({ settings, onMonitoringStatusChange }) => {
     // Add a minimum delay between captures to prevent system overload
     const now = Date.now();
     const timeSinceLastCapture = now - lastCaptureTimeRef.current;
-    const MIN_CAPTURE_INTERVAL = 1000; // Minimum 1 second between captures
+    // Use the appropriate interval based on mode
+    const currentInterval = monitorMode === 'selected' && selectedSources.length > 1 ? MULTI_APP_INTERVAL : BASE_INTERVAL;
+    const MIN_CAPTURE_INTERVAL = currentInterval - 100; // Slightly less than interval to account for timer drift
     
     if (timeSinceLastCapture < MIN_CAPTURE_INTERVAL) {
+      console.log(`[ScreenshotMonitor] Skipping capture - too soon (${timeSinceLastCapture}ms < ${MIN_CAPTURE_INTERVAL}ms)`);
       return;
     }
     
-    console.log('[ScreenshotMonitor] Starting capture process...');
+    const timestamp = new Date().toISOString();
+    console.log(`[ScreenshotMonitor] Starting capture process at ${timestamp} (${now}ms)`);
     lastCaptureTimeRef.current = now;
 
+    setIsProcessingScreenshot(true); // Set flag before try
+    
     try {
-      setIsProcessingScreenshot(true);
       setStatus('capturing');
 
       let result;
       let sourceInfo = null;
       
       if (monitorMode === 'selected' && selectedSources.length > 0) {
-        console.log(`[ScreenshotMonitor] Capturing ${selectedSources.length} selected sources:`, selectedSources.map(s => s.name));
+        // Check which sources are visible before capturing
+        const visibilityMap = await checkVisibleSources(selectedSources);
+        const visibleSources = selectedSources.filter(s => visibilityMap[s.id]);
         
-        // Step 1: Capture all selected sources simultaneously
-        const capturePromises = selectedSources.map(async (source) => {
+        if (visibleSources.length === 0) {
+          console.log('[ScreenshotMonitor] No selected apps are currently visible, skipping capture');
+          setStatus('monitoring');
+          setCurrentAppName('No apps visible');
+          setIsProcessingScreenshot(false); // CRITICAL: Reset the processing flag!
+          return;
+        }
+        
+        console.log(`[ScreenshotMonitor] ${visibleSources.length}/${selectedSources.length} selected sources are visible:`, visibleSources.map(s => s.name));
+        
+        // Step 1: Capture only visible sources
+        const capturePromises = visibleSources.map(async (source) => {
           try {
-            console.log(`[ScreenshotMonitor] Capturing source: ${source.name} (${source.id})`);
+            const captureTime = new Date().toISOString();
+            console.log(`[ScreenshotMonitor] ${captureTime} - Capturing visible source: ${source.name} (${source.id})`);
             const captureResult = await window.electronAPI.takeSourceScreenshot(source.id);
             if (captureResult.success) {
               console.log(`[ScreenshotMonitor] Successfully captured: ${source.name}`);
@@ -440,6 +506,16 @@ const ScreenshotMonitor = ({ settings, onMonitoringStatusChange }) => {
           
           const { source, captureResult } = result;
           
+          // Normalize source ID for storage - strip the changing number from virtual window IDs
+          let storageKey = source.id;
+          if (source.id.startsWith('virtual-window:')) {
+            // Extract just the app name part for consistent storage
+            const appNameMatch = source.id.match(/virtual-window:\d+-(.+)$/);
+            if (appNameMatch) {
+              storageKey = `app-${appNameMatch[1]}`;
+            }
+          }
+          
           // Skip similarity check if disabled
           if (skipSimilarityCheck) {
             console.log(`⏭️ Similarity check disabled for ${source.name}`);
@@ -460,8 +536,8 @@ const ScreenshotMonitor = ({ settings, onMonitoringStatusChange }) => {
           }
           
           // If this is the first image for this source, always include it (but validate first)
-          console.log(`🔍 Checking if first capture for ${source.name} (${source.id}). Has stored data: ${!!sourceLastImageDataRef.current[source.id]}`);
-          if (!sourceLastImageDataRef.current[source.id]) {
+          console.log(`🔍 Checking if first capture for ${source.name} (storage key: ${storageKey}). Has stored data: ${!!sourceLastImageDataRef.current[storageKey]}`);
+          if (!sourceLastImageDataRef.current[storageKey]) {
             console.log(`🆕 First capture for ${source.name} - skipping similarity check`);
             // Validate file exists and is readable before adding to validImages
             const imageResult = await window.electronAPI.readImageAsBase64(captureResult.filepath);
@@ -488,8 +564,8 @@ const ScreenshotMonitor = ({ settings, onMonitoringStatusChange }) => {
                       const ctx = canvas.getContext('2d');
                       ctx.drawImage(img, 0, 0);
                       const currentImageData = getImageDataFromCanvas(canvas);
-                      sourceLastImageDataRef.current[source.id] = currentImageData;
-                      console.log(`✅ Stored image data for ${source.name}, data length: ${currentImageData.length}`);
+                      sourceLastImageDataRef.current[storageKey] = currentImageData;
+                      console.log(`✅ Stored image data for ${source.name} (key: ${storageKey}), data length: ${currentImageData.length}`);
                       resolve();
                     } catch (error) {
                       console.error(`❌ Error processing image for storage: ${source.name}:`, error);
@@ -512,7 +588,7 @@ const ScreenshotMonitor = ({ settings, onMonitoringStatusChange }) => {
           }
           
           // Compare with last image for this source
-          console.log(`🔍 Running similarity check for ${source.name}`);
+          console.log(`🔍 Running similarity check for ${source.name} (using key: ${storageKey})`);
           try {
             const imageResult = await window.electronAPI.readImageAsBase64(captureResult.filepath);
             if (imageResult.success) {
@@ -527,7 +603,7 @@ const ScreenshotMonitor = ({ settings, onMonitoringStatusChange }) => {
                     ctx.drawImage(img, 0, 0);
                     const currentImageData = getImageDataFromCanvas(canvas);
                     
-                    const similarity = calculateImageSimilarity(sourceLastImageDataRef.current[source.id], currentImageData);
+                    const similarity = calculateImageSimilarity(sourceLastImageDataRef.current[storageKey], currentImageData);
                     console.log(`🔍 Similarity score for ${source.name}: ${similarity.toFixed(4)} (threshold: ${SIMILARITY_THRESHOLD})`);
                     
                     // Debug: Save comparison images when similarity is suspiciously low (0.0000)
@@ -536,7 +612,7 @@ const ScreenshotMonitor = ({ settings, onMonitoringStatusChange }) => {
                       try {
                         // Save the previous image (stored data) as 0.png
                         const prevCanvas = document.createElement('canvas');
-                        const prevImageData = sourceLastImageDataRef.current[source.id];
+                        const prevImageData = sourceLastImageDataRef.current[storageKey];
                         const imageSize = Math.sqrt(prevImageData.length / 4); // Assume square image for now
                         const actualWidth = canvas.width;
                         const actualHeight = canvas.height;
@@ -577,7 +653,7 @@ const ScreenshotMonitor = ({ settings, onMonitoringStatusChange }) => {
                       console.log(`📸 Screenshot saved: ${captureResult.filepath} (${source.name})`);
                       validImages.push(captureResult.filepath);
                       validSources.push(source.name);
-                      sourceLastImageDataRef.current[source.id] = currentImageData;
+                      sourceLastImageDataRef.current[storageKey] = currentImageData;
                     } else {
                       // Image is too similar, delete it
                       console.log(`🗑️ Deleting similar screenshot: ${captureResult.filepath} (${source.name})`);
@@ -606,7 +682,8 @@ const ScreenshotMonitor = ({ settings, onMonitoringStatusChange }) => {
         // Step 3: Send all valid images to backend in one request (if any)
         
         if (validImages.length > 0) {
-          console.log(`📤 Sending ${validImages.length} images to backend:`, validImages);
+          const sendTime = new Date().toISOString();
+          console.log(`📤 ${sendTime} - Sending ${validImages.length} images to backend:`, validImages);
           const sendResult = await sendScreenshotsToBackend(validImages, validSources);
           if (!sendResult || !sendResult.success) {
             // Backend sending failed - but don't delete the images since they're valid/non-similar
@@ -619,7 +696,10 @@ const ScreenshotMonitor = ({ settings, onMonitoringStatusChange }) => {
           console.log('[ScreenshotMonitor] No valid images to send (all were too similar)');
         }
         
-        setCurrentAppName(selectedSources.length === 1 ? selectedSources[0].name : `All ${selectedSources.length} apps (${validImages.length} sent)`);
+        const statusMessage = visibleSources.length === 1 
+          ? visibleSources[0].name 
+          : `${visibleSources.length}/${selectedSources.length} apps visible (${validImages.length} sent)`;
+        setCurrentAppName(statusMessage);
         setStatus('monitoring');
         return;
       } else {
@@ -684,7 +764,7 @@ const ScreenshotMonitor = ({ settings, onMonitoringStatusChange }) => {
     } finally {
       setIsProcessingScreenshot(false);
     }
-  }, [calculateImageSimilarity, getImageDataFromCanvas, sendScreenshotToBackend, deleteSimilarScreenshot, skipSimilarityCheck, isRequestInProgress, isProcessingScreenshot, monitorMode, selectedSources]);
+  }, [calculateImageSimilarity, getImageDataFromCanvas, sendScreenshotToBackend, sendScreenshotsToBackend, deleteSimilarScreenshot, skipSimilarityCheck, isRequestInProgress, isProcessingScreenshot, monitorMode, selectedSources, checkVisibleSources, BASE_INTERVAL, MULTI_APP_INTERVAL]);
 
   // Start monitoring
   const startMonitoring = useCallback(async () => {
@@ -726,7 +806,8 @@ const ScreenshotMonitor = ({ settings, onMonitoringStatusChange }) => {
 
     // Start the interval - use longer interval for multiple apps
     const interval = monitorMode === 'selected' && selectedSources.length > 1 ? MULTI_APP_INTERVAL : BASE_INTERVAL;
-    console.log(`[ScreenshotMonitor] Starting interval with ${interval}ms`);
+    const startTime = new Date().toISOString();
+    console.log(`[ScreenshotMonitor] ${startTime} - Starting interval with ${interval}ms (${interval/1000}s)`);
     intervalRef.current = setInterval(processScreenshot, interval);
 
     // Take first screenshot immediately
@@ -736,10 +817,8 @@ const ScreenshotMonitor = ({ settings, onMonitoringStatusChange }) => {
 
   // Stop monitoring
   const stopMonitoring = useCallback(() => {
-    console.log('[ScreenshotMonitor] stopMonitoring called');
     
     if (!isMonitoring) {
-      console.log('[ScreenshotMonitor] Not monitoring, skipping stop');
       return;
     }
 
@@ -762,6 +841,10 @@ const ScreenshotMonitor = ({ settings, onMonitoringStatusChange }) => {
     lastImageDataRef.current = null;
     sourceLastImageDataRef.current = {};
     setCurrentAppName('');
+    
+    // Clear visibility cache
+    cachedVisibleSourcesRef.current = null;
+    lastVisibilityCheckRef.current = 0;
     
     // Reset request and processing state
     setIsRequestInProgress(false);
@@ -904,13 +987,6 @@ const ScreenshotMonitor = ({ settings, onMonitoringStatusChange }) => {
           <button
             className={`monitor-toggle ${isMonitoring ? 'active' : ''}`}
             onClick={() => {
-              console.log('[ScreenshotMonitor] Monitor button clicked', {
-                isMonitoring,
-                hasScreenPermission,
-                monitorMode,
-                selectedSourcesLength: selectedSources.length,
-                buttonDisabled: hasScreenPermission === false || (monitorMode === 'selected' && selectedSources.length === 0)
-              });
               if (isMonitoring) {
                 stopMonitoring();
               } else {

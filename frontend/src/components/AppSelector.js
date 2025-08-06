@@ -66,25 +66,68 @@ const AppSelector = ({ onSourcesSelected, onClose }) => {
       
       // Extract app name from window title
       let appName = source.name;
-      // Common patterns for extracting app names from window titles
-      if (source.name.includes(' — Microsoft Teams')) {
+      
+      // Microsoft Teams specific patterns
+      if (source.name.includes('Microsoft Teams') || 
+          source.name.includes('MSTeams') || 
+          (source.name.includes('Chat |') && source.name.includes('| Microsoft Teams'))) {
         appName = 'Microsoft Teams';
-      } else if (source.name.includes(' - Microsoft Teams')) {
-        appName = 'Microsoft Teams';
-      } else if (source.name.includes('MSTeams')) {
-        // Handle "MSTeams - Teams Meeting" pattern
-        appName = 'Microsoft Teams';
-      } else if (source.name.includes('Chat |') && source.name.includes('|')) {
-        // Handle "Chat | Memory & RAG discussion | A..." pattern (Teams chat windows)
-        appName = 'Microsoft Teams';  
-      } else if (source.name.includes(' — ')) {
+      } 
+      // WeChat specific patterns
+      else if (source.name.includes('WeChat') || source.name.includes('微信')) {
+        appName = 'WeChat';
+      }
+      // Slack specific patterns
+      else if (source.name.includes('Slack')) {
+        appName = 'Slack';
+      }
+      // Chrome specific patterns
+      else if (source.name.includes('Google Chrome') || source.name.endsWith(' - Chrome')) {
+        appName = 'Google Chrome';
+      }
+      // Safari specific patterns
+      else if (source.name.includes('Safari') || source.name.endsWith(' — Safari')) {
+        appName = 'Safari';
+      }
+      // Visual Studio Code
+      else if (source.name.includes('Visual Studio Code') || source.name.endsWith(' - Code')) {
+        appName = 'Visual Studio Code';
+      }
+      // Terminal/iTerm
+      else if (source.name.includes('Terminal') || source.name.includes('iTerm')) {
+        appName = source.name.includes('iTerm') ? 'iTerm' : 'Terminal';
+      }
+      // For other apps, try to extract from window title more carefully
+      else if (source.name.includes(' — ')) {
         // For apps that use em dash separator (like many Mac apps)
-        appName = source.name.split(' — ').pop();
-      } else if (source.name.includes(' - ') && !source.name.startsWith('Untitled')) {
-        // For apps that use regular dash separator, but exclude system windows
+        // Take the last part, but only if it looks like an app name (not too long)
+        const lastPart = source.name.split(' — ').pop();
+        if (lastPart && lastPart.length < 30) {
+          appName = lastPart;
+        }
+      } else if (source.name.includes(' - ')) {
+        // For apps that use regular dash separator
+        // Be more careful - only take the last part if it's likely an app name
         const parts = source.name.split(' - ');
-        if (parts.length > 1) {
-          appName = parts[parts.length - 1];
+        const lastPart = parts[parts.length - 1];
+        
+        // Check if the last part looks like an app name (starts with capital, not too long, etc.)
+        if (lastPart && 
+            lastPart.length < 30 && 
+            /^[A-Z]/.test(lastPart) &&
+            !lastPart.includes('.') && // Not a filename
+            !lastPart.includes('/') && // Not a path
+            !lastPart.match(/^\d/)) {  // Doesn't start with a number
+          appName = lastPart;
+        }
+      }
+      
+      // Final cleanup - if appName is still the full window title and it's very long,
+      // just use the first part before any separator
+      if (appName === source.name && appName.length > 50) {
+        const firstPart = appName.split(/[\-—]/)[0].trim();
+        if (firstPart && firstPart.length < 30) {
+          appName = firstPart;
         }
       }
       
@@ -95,8 +138,6 @@ const AppSelector = ({ onSourcesSelected, onClose }) => {
         // First window for this app
         appGroups.set(appName, { ...source, appName });
       } else {
-        console.log(`🔍 [AppSelector] Found duplicate app "${appName}": existing="${existingSource.name}", current="${source.name}"`);
-        
         // Special handling for Microsoft Teams windows
         if (appName === 'Microsoft Teams') {
           const isCurrentMSTeams = source.name.includes('MSTeams');
@@ -104,26 +145,18 @@ const AppSelector = ({ onSourcesSelected, onClose }) => {
           const isCurrentChat = source.name.includes('Chat |');
           const isExistingChat = existingSource.name.includes('Chat |');
           
-          console.log(`🔍 [AppSelector] Teams window check: current MSTeams=${isCurrentMSTeams}, current Chat=${isCurrentChat}, existing MSTeams=${isExistingMSTeams}, existing Chat=${isExistingChat}`);
-          
           if (isCurrentMSTeams && !isExistingMSTeams) {
             // Current is MSTeams main window, prefer it over chat windows
-            console.log(`🔍 [AppSelector] Replacing with MSTeams main window: "${source.name}"`);
             appGroups.set(appName, { ...source, appName });
           } else if (!isCurrentMSTeams && isExistingMSTeams) {
             // Existing is MSTeams main window, keep it
-            console.log(`🔍 [AppSelector] Keeping existing MSTeams main window: "${existingSource.name}"`);
           } else if (isCurrentChat && !isExistingChat) {
             // Current is chat, existing is something else - prefer chat over generic
-            console.log(`🔍 [AppSelector] Replacing with chat window: "${source.name}"`);
             appGroups.set(appName, { ...source, appName });
           } else {
             // Default: prefer shorter name
             if (source.name.length < existingSource.name.length) {
-              console.log(`🔍 [AppSelector] Replacing with shorter Teams window: "${source.name}"`);
               appGroups.set(appName, { ...source, appName });
-            } else {
-              console.log(`🔍 [AppSelector] Keeping existing Teams window: "${existingSource.name}"`);
             }
           }
         } else {
@@ -131,30 +164,20 @@ const AppSelector = ({ onSourcesSelected, onClose }) => {
           const isCurrentMainWindow = source.name === appName || source.name.endsWith(appName);
           const isExistingMainWindow = existingSource.name === appName || existingSource.name.endsWith(appName);
           
-          console.log(`🔍 [AppSelector] Main window check: current=${isCurrentMainWindow}, existing=${isExistingMainWindow}`);
-          
           if (isCurrentMainWindow && !isExistingMainWindow) {
             // Current is main window, existing is sub-window - replace
-            console.log(`🔍 [AppSelector] Replacing with main window: "${source.name}"`);
             appGroups.set(appName, { ...source, appName });
           } else if (!isCurrentMainWindow && !isExistingMainWindow) {
             // Both are sub-windows - prefer shorter name (usually more general)
             if (source.name.length < existingSource.name.length) {
-              console.log(`🔍 [AppSelector] Replacing with shorter name: "${source.name}"`);
               appGroups.set(appName, { ...source, appName });
-            } else {
-              console.log(`🔍 [AppSelector] Keeping existing longer name: "${existingSource.name}"`);
             }
-          } else {
-            console.log(`🔍 [AppSelector] Keeping existing main window: "${existingSource.name}"`);
           }
         }
-        // If existing is main window and current is sub-window, keep existing
       }
     });
     
     const result = Array.from(appGroups.values());
-    console.log('🔍 [AppSelector] Final grouped sources:', result.map(s => ({ id: s.id, name: s.name, appName: s.appName })));
     return result;
   };
 

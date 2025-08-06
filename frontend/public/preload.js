@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Window/App capture functions
   getCaptureSources: () => ipcRenderer.invoke('get-capture-sources'),
+  getVisibleSources: (sourceIds) => ipcRenderer.invoke('get-visible-sources', sourceIds),
   takeSourceScreenshot: (sourceId) => ipcRenderer.invoke('take-source-screenshot', sourceId),
   
   // Image reading function for similarity comparison

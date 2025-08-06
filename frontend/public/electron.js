@@ -99,19 +99,9 @@ function saveDebugCopy(sourceFilePath, debugName, sourceName = '') {
     const debugFileName = `${timestamp}_${debugName}_${sanitizedSourceName}.png`;
     const debugFilePath = path.join(debugImagesDir, debugFileName);
     
-    safeLog.log(`Attempting to save debug copy: ${sourceFilePath} -> ${debugFilePath}`);
-    
     if (fs.existsSync(sourceFilePath)) {
       fs.copyFileSync(sourceFilePath, debugFilePath);
       safeLog.log(`✅ Debug copy saved: ${debugFilePath}`);
-      
-      // Verify the file was actually copied
-      if (fs.existsSync(debugFilePath)) {
-        const stats = fs.statSync(debugFilePath);
-        safeLog.log(`Debug file size: ${stats.size} bytes`);
-      } else {
-        safeLog.warn(`Debug copy not found after copy attempt: ${debugFilePath}`);
-      }
     } else {
       safeLog.warn(`Source file does not exist for debug copy: ${sourceFilePath}`);
     }
@@ -521,7 +511,6 @@ function createWindow() {
 
   // Listen for window show events
   mainWindow.on('show', () => {
-    safeLog.log('Window shown - notifying renderer');
     mainWindow.webContents.send('window-show');
   });
 
@@ -974,6 +963,106 @@ ipcMain.handle('get-capture-sources', async () => {
       error: error.message,
       sources: []
     };
+  }
+});
+
+// IPC handler for getting currently active/focused sources
+ipcMain.handle('get-visible-sources', async (event, sourceIds) => {
+  try {
+    const { desktopCapturer } = require('electron');
+    
+    if (sourceIds && sourceIds.length > 0) {
+      safeLog.log('Checking active/focused apps for source IDs:', sourceIds);
+      
+      // Get currently active app on macOS
+      let activeAppName = null;
+      if (process.platform === 'darwin') {
+        try {
+          const { exec } = require('child_process');
+          const { promisify } = require('util');
+          const execAsync = promisify(exec);
+          
+          // Get the frontmost (active) application
+          const { stdout } = await execAsync(`osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true'`);
+          activeAppName = stdout.trim().toLowerCase();
+          safeLog.log(`Active app: "${activeAppName}"`);
+        } catch (error) {
+          safeLog.log('Could not get active app:', error.message);
+        }
+      }
+      
+      // Also get visible sources for fallback
+      const visibleSources = await desktopCapturer.getSources({
+        types: ['window', 'screen'],
+        thumbnailSize: { width: 1, height: 1 },
+        fetchWindowIcons: false
+      });
+      
+      const results = sourceIds.map(id => {
+        let isVisible = false;
+        let name = 'Unknown';
+        
+        if (id.startsWith('virtual-window:')) {
+          const appNameMatch = id.match(/virtual-window:\d+-(.+)$/);
+          if (appNameMatch) {
+            name = decodeURIComponent(appNameMatch[1]);
+            
+            // Check if this app matches the active app
+            if (activeAppName) {
+              const appNameLower = name.toLowerCase();
+              const isActive = activeAppName.includes(appNameLower) || 
+                             appNameLower.includes(activeAppName) ||
+                             (appNameLower === 'msteams' && activeAppName.includes('teams')) ||
+                             (appNameLower === 'wechat' && (activeAppName.includes('wechat') || activeAppName.includes('weixin'))) ||
+                             (appNameLower === 'chrome' && activeAppName.includes('chrome'));
+              
+              if (isActive) {
+                isVisible = true;
+                safeLog.log(`Virtual window is ACTIVE: ${id} -> ${name} (active app: ${activeAppName})`);
+              } else {
+                safeLog.log(`Virtual window not active: ${id} -> ${name} (active app: ${activeAppName})`);
+              }
+            } else {
+              // Fallback: if we can't detect active app, assume visible (like before)
+              isVisible = true;
+              safeLog.log(`Virtual window assumed visible (no active app detection): ${id} -> ${name}`);
+            }
+          }
+        } else {
+          // For regular window IDs, check if they're actually visible
+          const visibleSource = visibleSources.find(s => s.id === id);
+          if (visibleSource) {
+            isVisible = true;
+            name = visibleSource.name;
+            safeLog.log(`Regular window found visible: ${id} -> ${name}`);
+          } else {
+            safeLog.log(`Regular window NOT visible: ${id}`);
+          }
+        }
+        
+        return { id, isVisible, name };
+      });
+      
+      return { success: true, sources: results };
+    } else {
+      // Return all available sources
+      const visibleSources = await desktopCapturer.getSources({
+        types: ['window', 'screen'],
+        thumbnailSize: { width: 1, height: 1 },
+        fetchWindowIcons: false
+      });
+      
+      const allVisible = visibleSources.map(s => ({ 
+        id: s.id, 
+        name: s.name,
+        isVisible: true 
+      }));
+      
+      return { success: true, sources: allVisible };
+    }
+  } catch (error) {
+    safeLog.error('Error checking source visibility:', error);
+    return { success: false, error: error.message };
   }
 });
 
@@ -1481,8 +1570,6 @@ except Exception as e:
 // IPC handler for taking screenshot (full screen - backward compatibility)
 ipcMain.handle('take-screenshot', async () => {
   try {
-    safeLog.log(`Taking FULL SCREEN screenshot (not source-specific)`);
-    
     const imagesDir = ensureScreenshotDirectory();
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filename = `screenshot-${timestamp}.png`;
@@ -1522,21 +1609,7 @@ ipcMain.handle('take-screenshot', async () => {
         await screenshot(filepath);
       } catch (altError) {
         safeLog.error('Alternative screenshot method also failed:', altError);
-        
-        // As a last resort, create a test image file for debugging
-        if (actuallyDev) {
-          safeLog.log('Creating test screenshot file for debugging...');
-          try {
-            const testBuffer = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
-            fs.writeFileSync(filepath, testBuffer);
-            safeLog.log('Test screenshot file created successfully');
-          } catch (testError) {
-            safeLog.error('Failed to create test screenshot file:', testError);
-            throw new Error(`Screenshot capture failed: ${screenshotError.message}. Alternative method error: ${altError.message}. Test file creation error: ${testError.message}`);
-          }
-        } else {
-          throw new Error(`Screenshot capture failed: ${screenshotError.message}. Alternative method error: ${altError.message}`);
-        }
+        throw new Error(`Screenshot capture failed: ${screenshotError.message}. Alternative method error: ${altError.message}`);
       }
     }
     
