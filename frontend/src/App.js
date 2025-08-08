@@ -31,6 +31,13 @@ function App() {
     modelType: ''
   });
 
+  // Track pending model changes for retry after API key update
+  const [pendingModelChange, setPendingModelChange] = useState({
+    model: null,
+    type: null, // 'chat' or 'memory'
+    retryFunction: null
+  });
+
   // Backend loading modal state
   const [backendLoading, setBackendLoading] = useState({
     isVisible: false,
@@ -255,6 +262,22 @@ function App() {
   const handleApiKeySubmit = async () => {
     // Refresh API key status after submission
     await checkApiKeys();
+    
+    // If there's a pending model change, retry it now
+    if (pendingModelChange.retryFunction) {
+      console.log(`Retrying ${pendingModelChange.type} model change to '${pendingModelChange.model}' after API key update`);
+      try {
+        await pendingModelChange.retryFunction();
+      } catch (error) {
+        console.error('Failed to retry model change:', error);
+      }
+      // Clear the pending change after retry attempt
+      setPendingModelChange({
+        model: null,
+        type: null,
+        retryFunction: null
+      });
+    }
   };
 
   useEffect(() => {
@@ -389,6 +412,18 @@ function App() {
             settings={settings}
             onSettingsChange={handleSettingsChange}
             onApiKeyCheck={checkApiKeys}
+            onApiKeyRequired={(missingKeys, modelType, pendingModel, changeType, retryFunction) => {
+              setApiKeyModal({
+                isOpen: true,
+                missingKeys,
+                modelType
+              });
+              setPendingModelChange({
+                model: pendingModel,
+                type: changeType,
+                retryFunction: retryFunction
+              });
+            }}
             isVisible={activeTab === 'settings'}
           />
         )}

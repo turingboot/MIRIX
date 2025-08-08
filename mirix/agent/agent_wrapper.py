@@ -261,8 +261,6 @@ class AgentWrapper():
         Update chat agent system prompt based on screen monitoring status
         '''
 
-        print(f"🔄 Updating chat agent system prompt: {is_screen_monitoring}")
-
         if self.chat_agent_standalone == is_screen_monitoring:
 
             if self.is_screen_monitor:

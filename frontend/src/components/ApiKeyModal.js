@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './ApiKeyModal.css';
 import queuedFetch from '../utils/requestQueue';
 
@@ -37,10 +37,20 @@ const ApiKeyModal = ({ isOpen, onClose, missingKeys, modelType, onSubmit, server
 
   const isMissingKeysMode = missingKeys && missingKeys.length > 0;
 
+  // Clear state when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setError('');
+      setIsSubmitting(false);
+      setSelectedService('');
+      setApiKeyValue('');
+    }
+  }, [isOpen]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
-    setError('');
+    setError('⏳ Saving API keys...');
 
     try {
       if (isMissingKeysMode) {
@@ -76,6 +86,7 @@ const ApiKeyModal = ({ isOpen, onClose, missingKeys, modelType, onSubmit, server
         // Handle manual update mode - submit selected service
         if (!selectedService || !apiKeyValue) {
           setError('Please select a service and enter an API key');
+          setIsSubmitting(false);
           return;
         }
 
@@ -96,11 +107,11 @@ const ApiKeyModal = ({ isOpen, onClose, missingKeys, modelType, onSubmit, server
         }
       }
 
-      // Show initialization message
-      setError('🔄 Initializing Agents with new API key...');
+      // Show success message
+      setError('✅ API keys saved successfully!');
       
       // Small delay to show the message before closing
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Call the onSubmit callback to refresh the parent component
       onSubmit();
@@ -206,8 +217,8 @@ const ApiKeyModal = ({ isOpen, onClose, missingKeys, modelType, onSubmit, server
           )}
 
           {error && (
-            <div className={`api-key-error ${error.includes('Initializing') ? 'api-key-info' : ''}`}>
-              {error.includes('Initializing') ? error : `❌ ${error}`}
+            <div className={`api-key-error ${error.includes('successfully') || error.includes('Saving') ? 'api-key-info' : ''}`}>
+              {error.includes('successfully') || error.includes('Saving') ? error : `❌ ${error}`}
             </div>
           )}
 
@@ -225,7 +236,7 @@ const ApiKeyModal = ({ isOpen, onClose, missingKeys, modelType, onSubmit, server
               className="api-key-submit-btn"
               disabled={isSubmitting || (isMissingKeysMode ? false : (!selectedService || !apiKeyValue))}
             >
-              {isSubmitting ? (error.includes('Initializing') ? '🔄 Initializing...' : '⏳ Saving...') : '✅ Save API Keys'}
+              {isSubmitting ? (error.includes('successfully') ? '✅ Saved!' : '⏳ Saving...') : '✅ Save API Keys'}
             </button>
           </div>
         </form>

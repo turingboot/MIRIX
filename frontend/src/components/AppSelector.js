@@ -206,7 +206,6 @@ const AppSelector = ({ onSourcesSelected, onClose }) => {
           <div className="app-selector-loading">
             <div className="spinner"></div>
             <p>Scanning available apps and windows...</p>
-            <p className="loading-note">This won't disturb your other applications</p>
           </div>
         ) : (
           <>

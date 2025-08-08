@@ -24,6 +24,7 @@ from mirix.constants import (
     LLM_MAX_TOKENS,
     REQ_HEARTBEAT_MESSAGE,
     CLEAR_HISTORY_AFTER_MEMORY_UPDATE,
+    CHAINING_FOR_MEMORY_UPDATE,
     MAX_EMBEDDING_DIM,
     MAX_RETRIEVAL_LIMIT_IN_SYSTEM,
     MAX_CHAINING_STEPS
@@ -630,7 +631,8 @@ class Agent(BaseAgent):
                 if function_name == 'trigger_memory_update':
                     function_args["user_message"] = {'message': convert_message_to_input_message(input_message), 
                                                      'existing_file_uris': existing_file_uris,
-                                                     'retrieved_memories': retrieved_memories}
+                                                     'retrieved_memories': retrieved_memories,
+                                                     'chaining': CHAINING_FOR_MEMORY_UPDATE}
                     if message_queue is not None:
                         function_args["user_message"]['message_queue'] = message_queue
                 
@@ -1449,6 +1451,9 @@ These keywords have been used to retrieve relevant memories from the database.
                     chaining=chaining
                 )
                 all_response_messages.extend(tmp_response_messages)
+
+            if function_failed:
+                self.logger.info(f"Function failed with error: {all_response_messages[-1].content[0].text if all_response_messages else 'Unknown error'}")
 
             # if function_failed:
 

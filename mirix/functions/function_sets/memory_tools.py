@@ -425,8 +425,9 @@ def trigger_memory_update_with_instruction(self: "Agent", user_message: object, 
         if agent.agent_type == agent_type:
             client.send_message(agent_id=agent.id, 
                 role='user', 
-                message="[Message from Chat Agent (Now you are allowed to make multiple function calls sequentially)] " +instruction, 
+                message="[Message from Chat Agent (Now you are allowed to make multiple function calls sequentially)] " + instruction, 
                 existing_file_uris=user_message['existing_file_uris'],
+                chaining=True,
                 retrieved_memories=user_message.get('retrieved_memories', None)
             )
             response += '[System Message] Agent ' + agent.name + ' has been triggered to update the memory.\n'

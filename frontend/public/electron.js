@@ -1273,7 +1273,7 @@ ipcMain.handle('take-source-screenshot', async (event, sourceId) => {
               // Found window ID
               
               try {
-                const captureResult = await new Promise((resolve, reject) => {
+                const captureResult = await new Promise(async (resolve, reject) => {
               const pythonScript = `
 import sys
 try:
@@ -1473,7 +1473,63 @@ except Exception as e:
 `;
               
               const { spawn } = require('child_process');
-              const python = spawn('/Users/yu.wang/anaconda3/bin/python3', ['-c', pythonScript]);
+              
+              // Function to find available Python executable
+              const findPython = async () => {
+                const possiblePaths = [
+                  'python3',  // Use system PATH first
+                  'python',   // Fallback to python
+                  '/usr/bin/python3',
+                  '/usr/local/bin/python3',
+                  '/opt/homebrew/bin/python3',
+                  `${process.env.HOME}/anaconda3/bin/python3`,
+                  `${process.env.HOME}/miniconda3/bin/python3`,
+                  '/System/Library/Frameworks/Python.framework/Versions/Current/bin/python3'
+                ];
+                
+                // Test each path to find one that works
+                for (const pythonPath of possiblePaths) {
+                  try {
+                    const testResult = await new Promise((resolve) => {
+                      const testProcess = spawn(pythonPath, ['-c', 'import sys; print("OK")'], {
+                        stdio: ['pipe', 'pipe', 'pipe']
+                      });
+                      
+                      let output = '';
+                      testProcess.stdout.on('data', (data) => {
+                        output += data.toString();
+                      });
+                      
+                      testProcess.on('close', (code) => {
+                        resolve({ success: code === 0 && output.trim() === 'OK', pythonPath });
+                      });
+                      
+                      testProcess.on('error', () => {
+                        resolve({ success: false, pythonPath });
+                      });
+                      
+                      // Timeout after 3 seconds
+                      setTimeout(() => {
+                        testProcess.kill();
+                        resolve({ success: false, pythonPath });
+                      }, 3000);
+                    });
+                    
+                    if (testResult.success) {
+                      console.log(`[ScreenCapture] Found working Python: ${pythonPath}`);
+                      return pythonPath;
+                    }
+                  } catch (error) {
+                    // Continue to next path
+                  }
+                }
+                
+                console.error('[ScreenCapture] No working Python found, falling back to python3');
+                return 'python3'; // Final fallback
+              };
+              
+              const pythonCmd = await findPython();
+              const python = spawn(pythonCmd, ['-c', pythonScript]);
               
               let output = '';
               let error = '';

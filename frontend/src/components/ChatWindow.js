@@ -22,9 +22,9 @@ const ChatWindow = ({ settings, messages, setMessages, isScreenMonitoring }) => 
 
   // Calculate derived values from state early
   const hasActiveStreaming = activeStreamingRequests.size > 0;
-  const currentStreamingContent = hasActiveStreaming 
-    ? Array.from(activeStreamingRequests.values())[activeStreamingRequests.size - 1].streamingContent
-    : '';
+  const currentStreamingData = hasActiveStreaming 
+    ? Array.from(activeStreamingRequests.values())[activeStreamingRequests.size - 1]
+    : null;
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -32,7 +32,7 @@ const ChatWindow = ({ settings, messages, setMessages, isScreenMonitoring }) => 
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, currentStreamingContent]);
+  }, [messages, currentStreamingData]);
 
   useEffect(() => {
     return () => {
@@ -403,13 +403,24 @@ const ChatWindow = ({ settings, messages, setMessages, isScreenMonitoring }) => 
                   const updated = new Map(prev);
                   const current = updated.get(requestId);
                   if (current) {
-                    let newContent = current.streamingContent;
+                    const currentState = { ...current };
+                    
                     if (data.message_type === 'internal_monologue') {
-                      newContent += '\n[Thinking] ' + data.content;
+                      // Handle thinking messages separately
+                      if (!currentState.thinkingSteps) {
+                        currentState.thinkingSteps = [];
+                      }
+                      currentState.thinkingSteps.push({
+                        id: Date.now() + Math.random(),
+                        content: data.content,
+                        timestamp: new Date().toISOString()
+                      });
                     } else if (data.message_type === 'response') {
-                      newContent += '\n' + data.content;
+                      // Handle response content
+                      currentState.streamingContent = (currentState.streamingContent || '') + data.content;
                     }
-                    updated.set(requestId, { ...current, streamingContent: newContent });
+                    
+                    updated.set(requestId, currentState);
                   }
                   return updated;
                 });
@@ -625,12 +636,13 @@ const ChatWindow = ({ settings, messages, setMessages, isScreenMonitoring }) => 
             <ChatBubble key={message.id} message={message} />
           ))}
           
-          {currentStreamingContent && (
+          {currentStreamingData && (
             <ChatBubble 
               message={{
                 id: 'streaming',
                 type: 'assistant',
-                content: currentStreamingContent,
+                content: currentStreamingData.streamingContent || '',
+                thinkingSteps: currentStreamingData.thinkingSteps || [],
                 timestamp: new Date().toISOString(),
                 isStreaming: true
               }} 

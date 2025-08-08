@@ -3,7 +3,7 @@ import './SettingsPanel.css';
 import queuedFetch from '../utils/requestQueue';
 import LocalModelModal from './LocalModelModal';
 
-const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, isVisible }) => {
+const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequired, isVisible }) => {
   const [personaDetails, setPersonaDetails] = useState({});
   const [selectedPersonaText, setSelectedPersonaText] = useState('');
   const [isUpdatingPersona, setIsUpdatingPersona] = useState(false);
@@ -350,16 +350,43 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, isVisible })
       
       if (response.ok) {
         const data = await response.json();
-        setModelUpdateMessage('✅ Chat agent model set successfully!');
-        console.log(`Successfully set chat agent model: ${newModel}`);
         
-        // Automatically check for API keys after model change
-        if (onApiKeyCheck) {
-          console.log('Checking API keys for new model...');
-          setModelUpdateMessage('✅ Model set! Checking API keys...');
-          setTimeout(() => {
-            onApiKeyCheck();
-          }, 500); // Small delay to allow backend to update
+        if (data.success) {
+          setModelUpdateMessage('✅ Chat agent model set successfully!');
+          console.log(`Successfully set chat agent model: ${newModel}`);
+          
+          // Show initialization message when model is successfully set
+          setModelUpdateMessage('🔄 Initializing chat agent with new model...');
+          
+          // Automatically check for API keys after model change
+          if (onApiKeyCheck) {
+            console.log('Checking API keys for new model...');
+            setTimeout(() => {
+              onApiKeyCheck();
+            }, 500); // Small delay to allow backend to update
+          }
+        } else {
+          // Handle case where backend returned success: false
+          if (data.missing_keys && data.missing_keys.length > 0) {
+            // If there are missing API keys, immediately open the API key modal
+            console.log(`Missing API keys for chat model '${newModel}': ${data.missing_keys.join(', ')}`);
+            setModelUpdateMessage('🔑 Opening API key configuration...');
+            
+            if (onApiKeyRequired) {
+              // Create retry function for this model change
+              const retryFunction = () => handleModelChange(newModel);
+              
+              // Small delay to show the message before opening modal
+              setTimeout(() => {
+                onApiKeyRequired(data.missing_keys, newModel, newModel, 'chat', retryFunction);
+              }, 500);
+            }
+          } else {
+            // Show error message for other types of failures
+            let errorMessage = data.message || 'Failed to set chat agent model';
+            setModelUpdateMessage(`❌ ${errorMessage}`);
+            console.error('Chat model set failed:', data);
+          }
         }
       } else {
         const errorData = await response.text();
@@ -412,28 +439,38 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, isVisible })
           setMemoryModelUpdateMessage('✅ Memory manager model set successfully!');
           console.log(`Successfully set memory manager model: ${newModel}`);
           
+          // Show initialization message when model is successfully set
+          setMemoryModelUpdateMessage('🔄 Initializing memory manager with new model...');
+          
           // Automatically check for API keys after memory model change
           if (onApiKeyCheck) {
             console.log('Checking API keys for new memory model...');
-            setMemoryModelUpdateMessage('✅ Memory model set! Checking API keys...');
             setTimeout(() => {
               onApiKeyCheck();
             }, 500); // Small delay to allow backend to update
           }
         } else {
           // Handle case where backend returned success: false
-          let errorMessage = data.message || 'Failed to set memory manager model';
           if (data.missing_keys && data.missing_keys.length > 0) {
-            errorMessage += ` (Missing API keys: ${data.missing_keys.join(', ')})`;
-            // Trigger API key check for missing keys
-            if (onApiKeyCheck) {
+            // If there are missing API keys, immediately open the API key modal
+            console.log(`Missing API keys for memory model '${newModel}': ${data.missing_keys.join(', ')}`);
+            setMemoryModelUpdateMessage('🔑 Opening API key configuration...');
+            
+            if (onApiKeyRequired) {
+              // Create retry function for this model change
+              const retryFunction = () => handleMemoryModelChange(newModel);
+              
+              // Small delay to show the message before opening modal
               setTimeout(() => {
-                onApiKeyCheck();
-              }, 1000);
+                onApiKeyRequired(data.missing_keys, newModel, newModel, 'memory', retryFunction);
+              }, 500);
             }
+          } else {
+            // Show error message for other types of failures
+            let errorMessage = data.message || 'Failed to set memory manager model';
+            setMemoryModelUpdateMessage(`❌ ${errorMessage}`);
+            console.error('Memory model set failed:', data);
           }
-          setMemoryModelUpdateMessage(`❌ ${errorMessage}`);
-          console.error('Memory model set failed:', data);
         }
       } else {
         const errorData = await response.text();

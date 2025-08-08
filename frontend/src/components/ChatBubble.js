@@ -5,12 +5,66 @@ import { tomorrow } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import './ChatBubble.css';
 
 const ChatBubble = ({ message }) => {
-  const { type, content, timestamp, images, isStreaming } = message;
+  const { type, content, timestamp, images, isStreaming, thinkingSteps } = message;
 
   const formatTime = (date) => {
     // Handle both Date objects and ISO string timestamps
     const dateObj = typeof date === 'string' ? new Date(date) : date;
-    return dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return dateObj.toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: true 
+    });
+  };
+
+  const renderThinkingSteps = () => {
+    if (!thinkingSteps || thinkingSteps.length === 0) return null;
+
+    return (
+      <div className="thinking-section">
+        <div className="thinking-header">
+          <span className="thinking-icon">🧠</span>
+          <span className="thinking-title">Thinking ...</span>
+          <span className="thinking-count">({thinkingSteps.length} step{thinkingSteps.length !== 1 ? 's' : ''})</span>
+        </div>
+        <div className="thinking-steps">
+          {thinkingSteps.map((step, index) => (
+            <div key={step.id} className="thinking-step">
+              <div className="thinking-step-header">
+                <span className="thinking-step-number">{index + 1}</span>
+                <span className="thinking-step-time">{formatTime(step.timestamp)}</span>
+              </div>
+              <div className="thinking-step-content">
+                <ReactMarkdown
+                  components={{
+                    code({node, inline, className, children, ...props}) {
+                      const match = /language-(\w+)/.exec(className || '');
+                      return !inline && match ? (
+                        <SyntaxHighlighter
+                          style={tomorrow}
+                          language={match[1]}
+                          PreTag="div"
+                          {...props}
+                        >
+                          {String(children).replace(/\n$/, '')}
+                        </SyntaxHighlighter>
+                      ) : (
+                        <code className={className} {...props}>
+                          {children}
+                        </code>
+                      );
+                    }
+                  }}
+                  className="thinking-markdown"
+                >
+                  {step.content}
+                </ReactMarkdown>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   const renderContent = () => {
@@ -105,6 +159,8 @@ const ChatBubble = ({ message }) => {
           })}
         </div>
       )}
+      
+      {renderThinkingSteps()}
       
       <div className="bubble-content">
         {renderContent()}

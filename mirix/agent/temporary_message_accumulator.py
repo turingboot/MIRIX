@@ -136,7 +136,8 @@ class TemporaryMessageAccumulator:
                         'image_uris': image_uris,
                         'sources': sources,
                         'audio_segments': full_message.get('voice_files', []),
-                        'message': full_message['message']
+                        'message': full_message['message'],
+                        'delete_after_upload': delete_after_upload  # Store delete flag for OpenAI models
                     })
                 )
                 
@@ -304,50 +305,6 @@ class TemporaryMessageAccumulator:
         if ready_messages is not None:
             # Use the pre-processed ready messages
             ready_to_process = ready_messages
-            
-            # # Debug: Save ready_messages to file
-            # import json
-            # debug_dir = "./debug"
-            # if not os.path.exists(debug_dir):
-            #     os.makedirs(debug_dir)
-            
-            # # Find the next available count
-            # count = 0
-            # while os.path.exists(os.path.join(debug_dir, f"ready_messages_{count}.json")):
-            #     count += 1
-            
-            # # Save ready_messages with proper serialization
-            # debug_file = os.path.join(debug_dir, f"ready_messages_{count}.json")
-            # serializable_messages = []
-            # for timestamp, item in ready_messages:
-            #     serializable_item = {
-            #         'timestamp': str(timestamp),
-            #         'message': item.get('message'),
-            #         'sources': item.get('sources'),
-            #         'image_uris': [],
-            #         'audio_segments': []
-            #     }
-                
-            #     # Handle image URIs
-            #     if 'image_uris' in item and item['image_uris']:
-            #         for uri in item['image_uris']:
-            #             if hasattr(uri, 'uri'):
-            #                 serializable_item['image_uris'].append({'type': 'google_cloud_file', 'uri': uri.uri})
-            #             elif isinstance(uri, str):
-            #                 serializable_item['image_uris'].append({'type': 'file_path', 'path': uri})
-            #             else:
-            #                 serializable_item['image_uris'].append({'type': 'unknown', 'value': str(uri)})
-                
-            #     # Handle audio segments
-            #     if 'audio_segments' in item and item['audio_segments']:
-            #         for segment in item['audio_segments']:
-            #             serializable_item['audio_segments'].append({'type': 'audio_segment', 'info': str(type(segment))})
-                
-            #     serializable_messages.append(serializable_item)
-            
-            # with open(debug_file, 'w') as f:
-            #     json.dump(serializable_messages, f, indent=2)
-            # self.logger.info(f"Debug: Saved ready_messages to {debug_file}")
             
             # Remove the processed messages from temporary_messages and clean up placeholders
             with self._temporary_messages_lock:
@@ -647,7 +604,7 @@ class TemporaryMessageAccumulator:
                     'type': 'text',
                     'text': f"Timestamp: {timestamp} Text:\n{text}"
                 })
-        
+
         return message_parts
     
     def _add_user_conversation_to_message(self, message):
@@ -712,36 +669,7 @@ class TemporaryMessageAccumulator:
                 responses.append(response)
         
         overall_end = time.time()
-    
-    def _send_direct_to_agent(self, agent_states, kwargs, agent_type):
-        """Send message directly to agent without using message queue ordering."""
-        import time
-        import threading
-        
-        start_time = time.time()
-        thread_id = threading.current_thread().ident
-        
-        # Get the appropriate agent ID
-        agent_id = self.message_queue._get_agent_id_for_type(agent_states, agent_type)
-        
-        # Time the actual API call separately
-        api_start = time.time()
-        try:
-            response = self.client.send_message(
-                agent_id=agent_id,
-                role='user',
-                **kwargs
-            )
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            response = "ERROR"
-        
-        api_end = time.time()
-        end_time = time.time()
-        
-        return response, agent_type
-    
+  
     def _cleanup_processed_content(self, ready_to_process, user_message_added):
         """Clean up processed content and mark files as processed."""
         # Mark processed files as processed in database and cleanup upload results (only for GEMINI models)
@@ -760,12 +688,46 @@ class TemporaryMessageAccumulator:
             # Since we don't have direct access to the original placeholders, we'll rely on
             # the cleanup happening in the upload manager's periodic cleanup or
             # when the same placeholder is accessed again
+        else:
+            # For OpenAI models: Clean up image files if delete_after_upload is True
+            for timestamp, item in ready_to_process:
+                # Check if this item should have its files deleted
+                should_delete = item.get('delete_after_upload', True)  # Default to True for backward compatibility
+                
+                if should_delete and 'image_uris' in item and item['image_uris']:
+                    for image_uri in item['image_uris']:
+                        # Only delete if it's a local file path (string)
+                        if isinstance(image_uri, str):
+                            self._delete_local_image_file(image_uri)
         
         # Clean up user messages if added
         if user_message_added:
             if len(self.temporary_user_messages) > 1:
                 self.temporary_user_messages.pop(0)
     
+    def _delete_local_image_file(self, image_path):
+        """Delete a local image file with retry logic."""
+        try:
+            max_retries = 10
+            retry_count = 0
+            while retry_count < max_retries:
+                try:
+                    if os.path.exists(image_path):
+                        os.remove(image_path)
+                        self.logger.debug(f"Deleted processed image file: {image_path}")
+                        if not os.path.exists(image_path):
+                            break
+                    else:
+                        break  # File doesn't exist, nothing to do
+                except Exception as e:
+                    retry_count += 1
+                    if retry_count < max_retries:
+                        time.sleep(0.1)
+                    else:
+                        self.logger.warning(f"Failed to delete image file {image_path} after {max_retries} attempts: {e}")
+        except Exception as e:
+            self.logger.error(f"Error while trying to delete image file {image_path}: {e}")
+
     def _cleanup_file_after_upload(self, filenames, placeholders):
         """Clean up local file after upload completes."""
 
