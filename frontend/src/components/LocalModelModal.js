@@ -142,7 +142,7 @@ function LocalModelModal({ isOpen, onClose, serverUrl, onSuccess }) {
               name="model_endpoint"
               value={formData.model_endpoint}
               onChange={handleInputChange}
-              placeholder="e.g. http://localhost:8000/v1"
+              placeholder="e.g. http://localhost:47283/v1"
               disabled={isLoading}
               required
             />

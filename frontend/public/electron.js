@@ -36,7 +36,7 @@ const safeLog = {
 
 let mainWindow;
 let backendProcess = null;
-const backendPort = 8000;
+const backendPort = 47283;
 let backendLogFile = null;
 let nativeCaptureHelper = null;
 

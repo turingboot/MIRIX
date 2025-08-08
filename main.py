@@ -27,7 +27,7 @@ def main():
     # Determine port from command line, environment variable, or default
     port = args.port
     if port is None:
-        port = int(os.environ.get('PORT', 8000))
+        port = int(os.environ.get('PORT', 47283))
     
     print(f"Starting Mirix server on {args.host}:{port}")
     

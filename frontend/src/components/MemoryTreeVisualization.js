@@ -14,7 +14,7 @@ import queuedFetch from '../utils/requestQueue';
 
 const MemoryTreeVisualization = ({ 
   memoryType, 
-  serverUrl = 'http://localhost:8000',
+  serverUrl = 'http://localhost:47283',
   getItemTitle = (item) => item.title || item.name || item.filename || item.summary,
   getItemDetails = (item) => ({ summary: item.summary, details: item.details })
 }) => {
