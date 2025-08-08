@@ -48,7 +48,7 @@ class Mirix:
         
         # Set API key environment variable based on provider
         if model_provider.lower() in ["google", "google_ai", "gemini"]:
-            os.environ["GOOGLE_API_KEY"] = api_key
+            os.environ["GEMINI_API_KEY"] = api_key
         elif model_provider.lower() in ["openai", "gpt"]:
             os.environ["OPENAI_API_KEY"] = api_key
         elif model_provider.lower() in ["anthropic", "claude"]:
@@ -57,11 +57,33 @@ class Mirix:
             # For custom providers, use the provider name as prefix
             os.environ[f"{model_provider.upper()}_API_KEY"] = api_key
         
+        # Force reload of model_settings to pick up new environment variables
+        self._reload_model_settings()
+        
         # Use default config if not specified
         if not config_path:
-            config_path = Path(__file__).parent.parent / "configs" / "mirix.yaml"
+            # Try to find config file in order of preference
+            package_dir = Path(__file__).parent
+            
+            # 1. Look in package configs directory (for installed package)
+            config_path = package_dir / "configs" / "mirix.yaml"
+            
             if not config_path.exists():
-                config_path = "./configs/mirix.yaml"
+                # 2. Look in parent configs directory (for development)
+                config_path = package_dir.parent / "configs" / "mirix.yaml"
+                
+                if not config_path.exists():
+                    # 3. Look in current working directory
+                    config_path = Path("./configs/mirix.yaml")
+                    
+                    if not config_path.exists():
+                        raise FileNotFoundError(
+                            f"Could not find mirix.yaml config file. Searched in:\n"
+                            f"  - {package_dir / 'configs' / 'mirix.yaml'}\n"
+                            f"  - {package_dir.parent / 'configs' / 'mirix.yaml'}\n"
+                            f"  - {Path('./configs/mirix.yaml').absolute()}\n"
+                            f"Please provide config_path parameter or ensure config file exists."
+                        )
         
         # Initialize the underlying agent (with optional backup restore)
         self._agent = AgentWrapper(str(config_path), load_from=load_from)
@@ -264,6 +286,24 @@ class Mirix:
                 'success': False,
                 'error': str(e)
             }
+    
+    def _reload_model_settings(self):
+        """
+        Force reload of model_settings to pick up new environment variables.
+        
+        This is necessary because Pydantic BaseSettings loads environment variables
+        at class instantiation time, which happens at import. Since the SDK sets
+        environment variables after import, we need to manually update the singleton.
+        """
+        from mirix.settings import ModelSettings
+        
+        # Create a new instance with current environment variables
+        new_settings = ModelSettings()
+        
+        # Update the global singleton instance with new values
+        import mirix.settings
+        for field_name in new_settings.model_fields:
+            setattr(mirix.settings.model_settings, field_name, getattr(new_settings, field_name))
     
     def __call__(self, message: str) -> str:
         """
