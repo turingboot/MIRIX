@@ -1,215 +1,49 @@
-const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
 class NativeCaptureHelper {
   constructor() {
-    this.helperProcess = null;
     this.isRunning = false;
-    this.requestQueue = [];
-    this.helperPath = null;
+    this.screenshots = null;
   }
 
   async initialize() {
-    console.log('Initializing Native Capture Helper...');
+    console.log('Initializing Native Capture Helper (Pure JavaScript)...');
     
-    // TEMPORARILY DISABLED: Skip Swift helper to avoid build issues and use enhanced Python approach
-    throw new Error('Native capture helper disabled - using enhanced Python fallback');
-    
-    // Find the helper executable
-    this.helperPath = await this.findHelperExecutable();
-    if (!this.helperPath) {
-      throw new Error('Native capture helper not found');
-    }
-
-    // Start the helper process
-    await this.startHelper();
-    console.log('✅ Native Capture Helper initialized successfully');
-  }
-
-  async findHelperExecutable() {
-    const possiblePaths = [
-      // Development paths
-      path.join(__dirname, '../capture-helper/.build/debug/mirix-capture-helper'),
-      path.join(__dirname, '../capture-helper/.build/release/mirix-capture-helper'),
+    try {
+      // Import node-screenshots dynamically
+      this.screenshots = require('node-screenshots');
       
-      // Production paths (in app bundle)
-      path.join(process.resourcesPath, 'capture-helper/mirix-capture-helper'),
-      path.join(process.resourcesPath, 'app/capture-helper/mirix-capture-helper'),
+      // Test that the module works
+      const monitors = this.screenshots.Monitor.all();
+      console.log(`[Native Helper] Found ${monitors.length} monitor(s)`);
       
-      // Fallback paths
-      './capture-helper/mirix-capture-helper',
-      '../capture-helper/mirix-capture-helper'
-    ];
-
-    for (const helperPath of possiblePaths) {
-      if (fs.existsSync(helperPath)) {
-        console.log(`Found helper at: ${helperPath}`);
-        return helperPath;
-      }
+      this.isRunning = true;
+      console.log('✅ Native Capture Helper initialized successfully (Python-free!)');
+    } catch (error) {
+      throw new Error(`Native capture helper failed to initialize: ${error.message}`);
     }
-
-    console.log('Helper not found, attempting to build...');
-    return await this.buildHelper();
   }
 
-  async buildHelper() {
-    const captureHelperDir = path.join(__dirname, '../capture-helper');
-    
-    if (!fs.existsSync(captureHelperDir)) {
-      console.log('❌ Capture helper source directory not found');
-      return null;
-    }
-
-    return new Promise((resolve, reject) => {
-      console.log('Building Swift capture helper...');
-      
-      const buildProcess = spawn('swift', ['build', '--configuration', 'release'], {
-        cwd: captureHelperDir,
-        stdio: ['pipe', 'pipe', 'pipe']
-      });
-
-      let buildOutput = '';
-      let buildError = '';
-
-      buildProcess.stdout.on('data', (data) => {
-        buildOutput += data.toString();
-      });
-
-      buildProcess.stderr.on('data', (data) => {
-        buildError += data.toString();
-      });
-
-      buildProcess.on('close', (code) => {
-        if (code === 0) {
-          console.log('✅ Swift helper built successfully');
-          const builtPath = path.join(captureHelperDir, '.build/release/mirix-capture-helper');
-          if (fs.existsSync(builtPath)) {
-            resolve(builtPath);
-          } else {
-            reject(new Error('Built helper not found at expected location'));
-          }
-        } else {
-          console.log('❌ Swift helper build failed:');
-          console.log('STDOUT:', buildOutput);
-          console.log('STDERR:', buildError);
-          reject(new Error(`Build failed with code ${code}: ${buildError}`));
-        }
-      });
-    });
-  }
-
-  async startHelper() {
-    if (this.isRunning) {
-      return;
-    }
-
-    return new Promise((resolve, reject) => {
-      console.log(`Starting helper process: ${this.helperPath}`);
-      
-      this.helperProcess = spawn(this.helperPath, [], {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        detached: false
-      });
-
-      this.helperProcess.stdout.on('data', (data) => {
-        const output = data.toString().trim();
-        console.log(`[Swift Helper] ${output}`);
-      });
-
-      this.helperProcess.stderr.on('data', (data) => {
-        const error = data.toString().trim();
-        console.log(`[Swift Helper Error] ${error}`);
-      });
-
-      this.helperProcess.on('close', (code) => {
-        console.log(`Helper process exited with code ${code}`);
-        this.isRunning = false;
-        this.helperProcess = null;
-      });
-
-      this.helperProcess.on('error', (error) => {
-        console.error('Failed to start helper process:', error);
-        reject(error);
-      });
-
-      // Give the helper a moment to start
-      setTimeout(() => {
-        if (this.helperProcess && this.helperProcess.pid) {
-          this.isRunning = true;
-          resolve();
-        } else {
-          reject(new Error('Helper process failed to start'));
-        }
-      }, 1000);
-    });
-  }
-
-  async sendRequest(command, parameters = null) {
-    if (!this.isRunning) {
-      throw new Error('Helper process not running');
-    }
-
-    const request = {
-      command: command,
-      parameters: parameters
-    };
-
-    return new Promise((resolve, reject) => {
-      const requestId = Date.now();
-      const pipePath = `/tmp/mirix-capture-helper`;
-      const responsePath = `/tmp/mirix-capture-helper-response`;
-
-      try {
-        // Write request to pipe
-        fs.writeFileSync(pipePath, JSON.stringify(request));
-
-        // Wait for response with timeout
-        const timeout = setTimeout(() => {
-          reject(new Error('Request timeout'));
-        }, 10000);
-
-        const checkForResponse = () => {
-          if (fs.existsSync(responsePath)) {
-            clearTimeout(timeout);
-            
-            try {
-              const responseData = fs.readFileSync(responsePath);
-              fs.unlinkSync(responsePath); // Clean up
-              
-              const response = JSON.parse(responseData.toString());
-              
-              if (response.success) {
-                resolve(response);
-              } else {
-                reject(new Error(response.error || 'Unknown error'));
-              }
-            } catch (error) {
-              reject(new Error(`Failed to parse response: ${error.message}`));
-            }
-          } else {
-            // Check again after a short delay
-            setTimeout(checkForResponse, 100);
-          }
-        };
-
-        checkForResponse();
-      } catch (error) {
-        reject(new Error(`Failed to send request: ${error.message}`));
-      }
-    });
-  }
-
-  // High-level methods
+    // High-level methods using pure JavaScript
 
   async getAllWindows() {
+    if (!this.isRunning) {
+      throw new Error('Helper not initialized');
+    }
+
     try {
-      const response = await this.sendRequest('list-windows');
-      if (response.dataBase64) {
-        const jsonData = Buffer.from(response.dataBase64, 'base64').toString('utf8');
-        return JSON.parse(jsonData);
-      }
+      // Use Electron's desktopCapturer to get available windows (visible ones)
+      // For now, we'll focus on screen capture rather than individual windows
+      // since node-screenshots doesn't have window enumeration capabilities
+      
+      // This is a simplified implementation - for full window management,
+      // we'd need a native addon or different approach
+      console.log('[Native Helper] Using simplified window detection (visible windows only)');
+      
+      // Return empty for now - the main focus is screen capture
+      // Individual window capture will fall back to desktopCapturer in electron.js
       return [];
     } catch (error) {
       console.error('Failed to get windows from native helper:', error);
@@ -218,19 +52,18 @@ class NativeCaptureHelper {
   }
 
   async captureWindow(windowId) {
+    if (!this.isRunning) {
+      throw new Error('Helper not initialized');
+    }
+
     try {
-      const response = await this.sendRequest('capture-window', { windowId });
-      if (response.dataBase64) {
-        const imageData = Buffer.from(response.dataBase64, 'base64');
-        return {
-          success: true,
-          data: imageData,
-          size: imageData.length
-        };
-      }
+      console.log(`[Native Helper] Pure JS window capture not supported for windowId ${windowId}`);
+      
+      // For pure JavaScript solution, we can't capture specific windows by ID
+      // This will gracefully fail and let the caller fall back to other methods
       return {
         success: false,
-        error: 'No image data received'
+        error: 'Pure JavaScript helper does not support individual window capture by ID'
       };
     } catch (error) {
       console.error(`Failed to capture window ${windowId}:`, error);
@@ -241,21 +74,56 @@ class NativeCaptureHelper {
     }
   }
 
-  async captureApp(appName) {
+  async captureScreen(monitorIndex = 0) {
+    if (!this.isRunning) {
+      throw new Error('Helper not initialized');
+    }
+
     try {
-      const response = await this.sendRequest('capture-app', { appName });
-      if (response.dataBase64) {
-        const imageData = Buffer.from(response.dataBase64, 'base64');
+      console.log(`[Native Helper] Capturing screen ${monitorIndex} using node-screenshots`);
+      
+      const monitors = this.screenshots.Monitor.all();
+      if (monitorIndex >= monitors.length) {
         return {
-          success: true,
-          data: imageData,
-          size: imageData.length
+          success: false,
+          error: `Monitor ${monitorIndex} not found. Available monitors: ${monitors.length}`
         };
       }
+
+      const monitor = monitors[monitorIndex];
+      const image = monitor.captureImageSync();
+      const pngBuffer = image.toPngSync();
+      
+      console.log(`[Native Helper] Screen capture successful, size: ${pngBuffer.length} bytes`);
+      
+      return {
+        success: true,
+        data: pngBuffer,
+        size: pngBuffer.length
+      };
+    } catch (error) {
+      console.error(`Failed to capture screen ${monitorIndex}:`, error);
       return {
         success: false,
-        error: 'No image data received'
+        error: error.message
       };
+    }
+  }
+
+  async captureApp(appName) {
+    if (!this.isRunning) {
+      throw new Error('Helper not initialized');
+    }
+
+    try {
+      console.log(`[Native Helper] Pure JS app capture for: ${appName}`);
+      console.log(`[Native Helper] Note: Individual app capture not supported, falling back to screen capture`);
+      
+      // Since we can't capture individual apps with node-screenshots,
+      // we'll capture the primary screen as a fallback
+      // The main Electron code will handle specific window capture via desktopCapturer
+      
+      return await this.captureScreen(0); // Capture primary monitor
     } catch (error) {
       console.error(`Failed to capture app ${appName}:`, error);
       return {
@@ -266,10 +134,8 @@ class NativeCaptureHelper {
   }
 
   async shutdown() {
-    if (this.helperProcess) {
+    if (this.isRunning) {
       console.log('Shutting down native capture helper');
-      this.helperProcess.kill('SIGTERM');
-      this.helperProcess = null;
       this.isRunning = false;
     }
   }

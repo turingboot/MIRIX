@@ -1224,16 +1224,16 @@ ipcMain.handle('take-source-screenshot', async (event, sourceId) => {
       
       // Check variable state
       
-      // Try native capture helper for full-screen and hidden apps
-      if (nativeCaptureHelper && appName) {
-        safeLog.log(`Attempting native capture for ${appName}`);
+      // Try Python-free native capture helper for screen capture
+      if (nativeCaptureHelper && nativeCaptureHelper.isRunning && appName) {
+        safeLog.log(`Attempting Python-free screen capture for ${appName}`);
         try {
-          const captureResult = await nativeCaptureHelper.captureApp(appName);
+          const captureResult = await nativeCaptureHelper.captureScreen(0);
           if (captureResult.success && captureResult.data) {
-            // Native capture successful
+            // Pure JS screen capture successful
             
             fs.writeFileSync(filepath, captureResult.data);
-            // saveDebugCopy(filepath, 'native_capture', appName);
+            // saveDebugCopy(filepath, 'python_free_screen_capture', appName);
             
             const stats = fs.statSync(filepath);
             
@@ -1242,14 +1242,14 @@ ipcMain.handle('take-source-screenshot', async (event, sourceId) => {
               filepath: filepath,
               filename: filename,
               size: stats.size,
-              sourceName: appName,
-              isNativeCapture: true
+              sourceName: `${appName} (Screen Capture - Python Free)`,
+              captureMethod: 'python_free_screen'
             };
           } else {
-            safeLog.log(`❌ Native capture failed for ${appName}: ${captureResult.error}`);
+            safeLog.log(`❌ Python-free screen capture failed for ${appName}: ${captureResult.error}`);
           }
         } catch (nativeError) {
-          safeLog.log(`❌ Native capture error for ${appName}: ${nativeError.message}`);
+          safeLog.log(`❌ Python-free capture error for ${appName}: ${nativeError.message}`);
         }
       }
       
