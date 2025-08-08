@@ -561,11 +561,15 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, isVisible })
   // Combine base models with custom models
   const models = [...baseModels, ...customModels];
 
-  // Memory models are restricted to specific Gemini models only, but also include custom models
+  // Memory models support both Gemini and OpenAI models, plus custom models
   const baseMemoryModels = [
     'gemini-2.0-flash',
     'gemini-2.5-flash',
-    'gemini-2.5-flash-lite'
+    'gemini-2.5-flash-lite',
+    'gpt-4o-mini',
+    'gpt-4o',
+    'gpt-4.1-mini',
+    'gpt-4.1',
   ];
 
   // Combine base memory models with custom models
@@ -853,7 +857,7 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, isVisible })
           <h3>About</h3>
           <div className="about-info">
             <p><strong>MIRIX Desktop</strong></p>
-            <p>Version 0.1.1</p>
+            <p>Version 0.1.2</p>
             <p>AI Assistant powered by advanced language models</p>
             <div className="about-links">
               <button 

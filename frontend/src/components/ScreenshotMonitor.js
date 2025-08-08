@@ -606,47 +606,10 @@ const ScreenshotMonitor = ({ settings, onMonitoringStatusChange }) => {
                     const similarity = calculateImageSimilarity(sourceLastImageDataRef.current[storageKey], currentImageData);
                     console.log(`🔍 Similarity score for ${source.name}: ${similarity.toFixed(4)} (threshold: ${SIMILARITY_THRESHOLD})`);
                     
-                    // Debug: Save comparison images when similarity is suspiciously low (0.0000)
-                    if (similarity === 0) {
-                      console.warn(`🐛 Suspicious similarity score of 0.0000 for ${source.name} - saving comparison images`);
-                      try {
-                        // Save the previous image (stored data) as 0.png
-                        const prevCanvas = document.createElement('canvas');
-                        const prevImageData = sourceLastImageDataRef.current[storageKey];
-                        const imageSize = Math.sqrt(prevImageData.length / 4); // Assume square image for now
-                        const actualWidth = canvas.width;
-                        const actualHeight = canvas.height;
-                        
-                        prevCanvas.width = actualWidth;
-                        prevCanvas.height = actualHeight;
-                        const prevCtx = prevCanvas.getContext('2d');
-                        const prevImageDataObj = new ImageData(prevImageData, actualWidth, actualHeight);
-                        prevCtx.putImageData(prevImageDataObj, 0, 0);
-                        
-                        // Save the current image as 1.png
-                        const currCanvas = document.createElement('canvas');
-                        currCanvas.width = actualWidth;
-                        currCanvas.height = actualHeight;
-                        const currCtx = currCanvas.getContext('2d');
-                        const currImageDataObj = new ImageData(currentImageData, actualWidth, actualHeight);
-                        currCtx.putImageData(currImageDataObj, 0, 0);
-                        
-                        // Convert to blob and save via electron API
-                        prevCanvas.toBlob(async (prevBlob) => {
-                          const prevBuffer = await prevBlob.arrayBuffer();
-                          await window.electronAPI.saveDebugComparisonImage(new Uint8Array(prevBuffer), '0.png');
-                        });
-                        
-                        currCanvas.toBlob(async (currBlob) => {
-                          const currBuffer = await currBlob.arrayBuffer();
-                          await window.electronAPI.saveDebugComparisonImage(new Uint8Array(currBuffer), '1.png');
-                        });
-                        
-                        console.log(`💾 Saved comparison images: ~/.mirix/debug/images/compare/0.png and 1.png`);
-                      } catch (debugError) {
-                        console.error(`❌ Failed to save comparison images:`, debugError);
-                      }
-                    }
+                    // Debug comparison image saving disabled
+                    // if (similarity === 0) {
+                    //   console.warn(`🐛 Suspicious similarity score of 0.0000 for ${source.name}`);
+                    // }
                     
                     if (similarity < SIMILARITY_THRESHOLD) {
                       // Image is different enough, include it

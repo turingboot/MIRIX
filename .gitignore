@@ -31,3 +31,4 @@ data/
 mirix_env/
 local_evaluations
 .claude/
+mirix.egg-info

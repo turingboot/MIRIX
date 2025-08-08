@@ -54,7 +54,7 @@ To fix it, install FFmpeg:
 The warning doesn't affect functionality as pydub falls back gracefully.
 """
 
-app = FastAPI(title="Mirix Agent API", version="0.1.1")
+app = FastAPI(title="Mirix Agent API", version="0.1.2")
 
 # Add CORS middleware
 app.add_middleware(

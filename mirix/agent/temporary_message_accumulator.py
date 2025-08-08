@@ -305,6 +305,50 @@ class TemporaryMessageAccumulator:
             # Use the pre-processed ready messages
             ready_to_process = ready_messages
             
+            # # Debug: Save ready_messages to file
+            # import json
+            # debug_dir = "./debug"
+            # if not os.path.exists(debug_dir):
+            #     os.makedirs(debug_dir)
+            
+            # # Find the next available count
+            # count = 0
+            # while os.path.exists(os.path.join(debug_dir, f"ready_messages_{count}.json")):
+            #     count += 1
+            
+            # # Save ready_messages with proper serialization
+            # debug_file = os.path.join(debug_dir, f"ready_messages_{count}.json")
+            # serializable_messages = []
+            # for timestamp, item in ready_messages:
+            #     serializable_item = {
+            #         'timestamp': str(timestamp),
+            #         'message': item.get('message'),
+            #         'sources': item.get('sources'),
+            #         'image_uris': [],
+            #         'audio_segments': []
+            #     }
+                
+            #     # Handle image URIs
+            #     if 'image_uris' in item and item['image_uris']:
+            #         for uri in item['image_uris']:
+            #             if hasattr(uri, 'uri'):
+            #                 serializable_item['image_uris'].append({'type': 'google_cloud_file', 'uri': uri.uri})
+            #             elif isinstance(uri, str):
+            #                 serializable_item['image_uris'].append({'type': 'file_path', 'path': uri})
+            #             else:
+            #                 serializable_item['image_uris'].append({'type': 'unknown', 'value': str(uri)})
+                
+            #     # Handle audio segments
+            #     if 'audio_segments' in item and item['audio_segments']:
+            #         for segment in item['audio_segments']:
+            #             serializable_item['audio_segments'].append({'type': 'audio_segment', 'info': str(type(segment))})
+                
+            #     serializable_messages.append(serializable_item)
+            
+            # with open(debug_file, 'w') as f:
+            #     json.dump(serializable_messages, f, indent=2)
+            # self.logger.info(f"Debug: Saved ready_messages to {debug_file}")
+            
             # Remove the processed messages from temporary_messages and clean up placeholders
             with self._temporary_messages_lock:
                 # Remove processed messages from the beginning (they were processed in temporal order)
@@ -787,4 +831,11 @@ class TemporaryMessageAccumulator:
         if self.upload_manager and hasattr(self.upload_manager, 'get_upload_status_summary'):
             summary['upload_manager_status'] = self.upload_manager.get_upload_status_summary()
         
-        return summary 
+        return summary
+    
+    def update_model(self, new_model_name):
+        """Update the model name and related settings."""
+        self.model_name = new_model_name
+        self.needs_upload = new_model_name in GEMINI_MODELS
+        self.logger = logging.getLogger(f"Mirix.TemporaryMessageAccumulator.{new_model_name}")
+        self.logger.setLevel(logging.INFO) 

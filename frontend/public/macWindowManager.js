@@ -190,6 +190,17 @@ async function getAllWindows() {
             else finalTitle = appName + ' Window';
           }
           
+          // Special handling for Cursor window titles
+          if (appName === 'Cursor' && finalTitle && finalTitle.includes(' - ')) {
+            // Cursor window titles are in format "filename - ProjectName"
+            // We want to extract just the project name
+            const parts = finalTitle.split(' - ');
+            if (parts.length >= 2) {
+              // Take the last part as the project name
+              finalTitle = parts[parts.length - 1];
+            }
+          }
+          
           allWindows.push({
             windowId: window.windowId, // Real window ID from Core Graphics
             appName: appName,

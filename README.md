@@ -1,4 +1,4 @@
-![Mirix Logo](assets/logo.png)
+![Mirix Logo](https://github.com/RenKoya1/MIRIX/raw/main/assets/logo.png)
 
 ## MIRIX - Multi-Agent Personal Assistant with an Advanced Memory System
 
@@ -47,6 +47,33 @@ agent.send_message(
 ```
 For more details, please refer to [Backend Usage](https://docs.mirix.io/user-guide/backend-usage/).
 
+## Python SDK (NEW!) 🎉
+
+We've created a simple Python SDK that makes it incredibly easy to integrate Mirix's memory capabilities into your applications:
+
+### Installation
+```bash
+pip install mirix
+```
+
+### Quick Start with SDK
+```python
+from mirix import Mirix
+
+# Initialize memory agent (defaults to Google Gemini 2.0 Flash)
+memory_agent = Mirix(api_key="your-google-api-key")
+
+# Add memories
+memory_agent.add("The moon now has a president")
+memory_agent.add("John loves Italian food and is allergic to peanuts")
+
+# Chat with memory context
+response = memory_agent.chat("Does the moon have a president?")
+print(response)  # "Yes, according to my memory, the moon has a president."
+
+response = memory_agent.chat("What does John like to eat?") 
+print(response)  # "John loves Italian food. However, he's allergic to peanuts."
+```
 
 ## License
 

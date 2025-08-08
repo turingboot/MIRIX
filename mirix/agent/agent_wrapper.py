@@ -642,23 +642,12 @@ class AgentWrapper():
         """Set the model specifically for memory management operations"""
         
         # Define allowed memory models
-        ALLOWED_MEMORY_MODELS = ['gemini-2.0-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-flash']
+        ALLOWED_MEMORY_MODELS = GEMINI_MODELS + OPENAI_MODELS
 
         # Validate the model
         if new_model not in ALLOWED_MEMORY_MODELS:
-            # warnings.warn(f'Invalid memory model. Only {", ".join(ALLOWED_MEMORY_MODELS)} are supported.')
-            self.logger.warning(f'Invalid memory model. Only {", ".join(ALLOWED_MEMORY_MODELS)} are supported.')
-
-            if new_model in OPENAI_MODELS:
-                llm_config = LLMConfig(
-                    model=new_model,
-                    model_endpoint_type="openai",
-                    model_endpoint="https://api.openai.com/v1",
-                    model_wrapper=None,
-                    context_window=128000,
-                )
-            
-            elif custom_agent_config is not None:
+            # For custom models, allow them to proceed with validation
+            if custom_agent_config is not None:
                 assert 'model_endpoint' in custom_agent_config, "model_endpoint is required for custom models"
 
                 llm_config = LLMConfig(
@@ -670,9 +659,7 @@ class AgentWrapper():
                     **custom_agent_config['generation_config']
                 )
             
-            else:
-                assert 'model_endpoint' in self.agent_config, "model_endpoint is required for custom models"
-
+            elif hasattr(self, 'agent_config') and 'model_endpoint' in self.agent_config:
                 llm_config = LLMConfig(
                     model=new_model,
                     model_endpoint_type="openai",
@@ -681,28 +668,66 @@ class AgentWrapper():
                     api_key=self.agent_config.get('api_key'),
                     **self.agent_config['generation_config']
                 )
-        
-        else:
             
-            # All allowed memory models are Gemini models
-            llm_config = LLMConfig(
-                model_endpoint_type="google_ai",
-                model_endpoint="https://generativelanguage.googleapis.com",
-                model=new_model,
-                context_window=100000
-            )
-            
-            # Check for API key availability
-            if not self.is_gemini_client_initialized():
+            else:
+                # Invalid model and no custom config
+                self.logger.warning(f'Invalid memory model. Only {", ".join(ALLOWED_MEMORY_MODELS)} are supported.')
                 return {
                     'success': False,
-                    'message': f'Memory model set to {new_model}, but Gemini API key is required.',
-                    'missing_keys': ['GEMINI_API_KEY'],
+                    'message': f'Invalid memory model. Only {", ".join(ALLOWED_MEMORY_MODELS)} are supported.',
+                    'missing_keys': [],
                     'model_requirements': {
                         'current_model': new_model,
-                        'required_keys': ['GEMINI_API_KEY']
+                        'required_keys': []
                     }
                 }
+        
+        else:
+            # Check if it's a Gemini model
+            if new_model in GEMINI_MODELS:
+                llm_config = LLMConfig(
+                    model_endpoint_type="google_ai",
+                    model_endpoint="https://generativelanguage.googleapis.com",
+                    model=new_model,
+                    context_window=100000
+                )
+                
+                # Check for Gemini API key availability
+                if not self.is_gemini_client_initialized():
+                    return {
+                        'success': False,
+                        'message': f'Memory model set to {new_model}, but Gemini API key is required.',
+                        'missing_keys': ['GEMINI_API_KEY'],
+                        'model_requirements': {
+                            'current_model': new_model,
+                            'required_keys': ['GEMINI_API_KEY']
+                        }
+                    }
+            
+            # Check if it's an OpenAI model
+            elif new_model in OPENAI_MODELS:
+                llm_config = LLMConfig(
+                    model=new_model,
+                    model_endpoint_type="openai",
+                    model_endpoint="https://api.openai.com/v1",
+                    model_wrapper=None,
+                    context_window=128000,
+                )
+                
+                # Check for OpenAI API key availability
+                openai_override_key = self.client.server.provider_manager.get_openai_override_key()
+                has_openai_key = openai_override_key or model_settings.openai_api_key
+                
+                if not has_openai_key:
+                    return {
+                        'success': False,
+                        'message': f'Memory model set to {new_model}, but OpenAI API key is required.',
+                        'missing_keys': ['OPENAI_API_KEY'],
+                        'model_requirements': {
+                            'current_model': new_model,
+                            'required_keys': ['OPENAI_API_KEY']
+                        }
+                    }
         
         # Update only the memory-related agents (all agents except chat_agent)
         memory_agent_names = [
@@ -725,7 +750,19 @@ class AgentWrapper():
                     actor=self.client.user
                 )
 
+        # Update the memory model name
         self.memory_model_name = new_model
+        
+        # Update temp_message_accumulator needs_upload based on the new model
+        if hasattr(self, 'temp_message_accumulator'):
+            self.temp_message_accumulator.update_model(new_model)
+        
+        # Determine required keys based on model type
+        required_keys = []
+        if new_model in GEMINI_MODELS:
+            required_keys = ['GEMINI_API_KEY']
+        elif new_model in OPENAI_MODELS:
+            required_keys = ['OPENAI_API_KEY']
         
         return {
             'success': True,
@@ -733,7 +770,7 @@ class AgentWrapper():
             'missing_keys': [],
             'model_requirements': {
                 'current_model': new_model,
-                'required_keys': ['GEMINI_API_KEY']
+                'required_keys': required_keys
             }
         }
     
@@ -1936,6 +1973,12 @@ Please perform this analysis and create new memories as appropriate. Provide a d
                     with open(Path(folder_path) / "agent_config.json", "w") as f:
                         json.dump(agent_config, f, indent=2)
                     
+                    # Save the agent configuration as YAML
+                    config_dest = Path(folder_path) / "mirix_config.yaml"
+                    with open(config_dest, "w") as f:
+                        yaml.dump(self.agent_config, f, default_flow_style=False, indent=2)
+                    self.logger.info(f"✅ Agent configuration saved: {config_dest}")
+                    
                     result['success'] = True
                     result['message'] = f'Agent state saved successfully to {folder_path}'
                     
@@ -1971,6 +2014,12 @@ Please perform this analysis and create new memories as appropriate. Provide a d
                     with open(Path(folder_path) / "agent_config.json", "w") as f:
                         json.dump(agent_config, f, indent=2)
                     
+                    # Save the agent configuration as YAML
+                    config_dest = Path(folder_path) / "mirix_config.yaml"
+                    with open(config_dest, "w") as f:
+                        yaml.dump(self.agent_config, f, default_flow_style=False, indent=2)
+                    self.logger.info(f"✅ Agent configuration saved: {config_dest}")
+                    
                     result['success'] = True
                     result['message'] = f'Agent state saved successfully to {folder_path}'
                 else:
@@ -1991,6 +2040,7 @@ Please perform this analysis and create new memories as appropriate. Provide a d
         Returns:
             Dictionary with database information
         """
+        from pathlib import Path
         from mirix.settings import settings
         
         info = {

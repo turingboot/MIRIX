@@ -59,57 +59,57 @@ function ensureScreenshotDirectory() {
   return imagesDir;
 }
 
-// Create debug images directory for development
-function ensureDebugImagesDirectory() {
-  const mirixDir = path.join(os.homedir(), '.mirix');
-  const debugDir = path.join(mirixDir, 'debug');
-  const debugImagesDir = path.join(debugDir, 'images');
-    
-  if (!fs.existsSync(mirixDir)) {
-    fs.mkdirSync(mirixDir, { recursive: true });
-  }
-  if (!fs.existsSync(debugDir)) {
-    fs.mkdirSync(debugDir, { recursive: true });
-  }
-  if (!fs.existsSync(debugImagesDir)) {
-    fs.mkdirSync(debugImagesDir, { recursive: true });
-  }
-  
-  return debugImagesDir;
-}
+// Create debug images directory for development - DISABLED
+// function ensureDebugImagesDirectory() {
+//   const mirixDir = path.join(os.homedir(), '.mirix');
+//   const debugDir = path.join(mirixDir, 'debug');
+//   const debugImagesDir = path.join(debugDir, 'images');
+//     
+//   if (!fs.existsSync(mirixDir)) {
+//     fs.mkdirSync(mirixDir, { recursive: true });
+//   }
+//   if (!fs.existsSync(debugDir)) {
+//     fs.mkdirSync(debugDir, { recursive: true });
+//   }
+//   if (!fs.existsSync(debugImagesDir)) {
+//     fs.mkdirSync(debugImagesDir, { recursive: true });
+//   }
+//   
+//   return debugImagesDir;
+// }
 
-// Create debug comparison directory
-function ensureDebugCompareDirectory() {
-  const debugImagesDir = ensureDebugImagesDirectory();
-  const compareDir = path.join(debugImagesDir, 'compare');
-  
-  if (!fs.existsSync(compareDir)) {
-    fs.mkdirSync(compareDir, { recursive: true });
-  }
-  
-  return compareDir;
-}
+// Create debug comparison directory - DISABLED
+// function ensureDebugCompareDirectory() {
+//   const debugImagesDir = ensureDebugImagesDirectory();
+//   const compareDir = path.join(debugImagesDir, 'compare');
+//   
+//   if (!fs.existsSync(compareDir)) {
+//     fs.mkdirSync(compareDir, { recursive: true });
+//   }
+//   
+//   return compareDir;
+// }
 
-// Helper function to save debug copy of an image
-function saveDebugCopy(sourceFilePath, debugName, sourceName = '') {
-  try {
-    const debugImagesDir = ensureDebugImagesDirectory();
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const sanitizedSourceName = sourceName.replace(/[^a-zA-Z0-9\-_]/g, '_');
-    const debugFileName = `${timestamp}_${debugName}_${sanitizedSourceName}.png`;
-    const debugFilePath = path.join(debugImagesDir, debugFileName);
-    
-    if (fs.existsSync(sourceFilePath)) {
-      fs.copyFileSync(sourceFilePath, debugFilePath);
-      safeLog.log(`✅ Debug copy saved: ${debugFilePath}`);
-    } else {
-      safeLog.warn(`Source file does not exist for debug copy: ${sourceFilePath}`);
-    }
-  } catch (error) {
-    safeLog.warn(`Failed to save debug copy: ${error.message}`);
-    safeLog.warn(`Error stack: ${error.stack}`);
-  }
-}
+// Helper function to save debug copy of an image - DISABLED
+// function saveDebugCopy(sourceFilePath, debugName, sourceName = '') {
+//   try {
+//     const debugImagesDir = ensureDebugImagesDirectory();
+//     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+//     const sanitizedSourceName = sourceName.replace(/[^a-zA-Z0-9\-_]/g, '_');
+//     const debugFileName = `${timestamp}_${debugName}_${sanitizedSourceName}.png`;
+//     const debugFilePath = path.join(debugImagesDir, debugFileName);
+//     
+//     if (fs.existsSync(sourceFilePath)) {
+//       fs.copyFileSync(sourceFilePath, debugFilePath);
+//       safeLog.log(`✅ Debug copy saved: ${debugFilePath}`);
+//     } else {
+//       safeLog.warn(`Source file does not exist for debug copy: ${sourceFilePath}`);
+//     }
+//   } catch (error) {
+//     safeLog.warn(`Failed to save debug copy: ${error.message}`);
+//     safeLog.warn(`Error stack: ${error.stack}`);
+//   }
+// }
 
 // Create backend log file
 function createBackendLogFile() {
@@ -748,14 +748,25 @@ ipcMain.handle('get-capture-sources', async () => {
     });
     
     // Format sources for the frontend
-    const formattedSources = sources.map(source => ({
-      id: source.id,
-      name: source.name,
-      type: source.display_id ? 'screen' : 'window',
-      thumbnail: source.thumbnail.toDataURL(),
-      appIcon: source.appIcon ? source.appIcon.toDataURL() : null,
-      isVisible: true // desktopCapturer only returns visible windows
-    }));
+    const formattedSources = sources.map(source => {
+      let displayName = source.name;
+      
+      // Debug logging - now that we do proper app matching later, just log basic info
+      if (source.display_id) {
+        safeLog.log(`📺 Screen: "${source.name}"`);
+      } else {
+        safeLog.log(`🪟 Window: "${source.name}"`);
+      }
+      
+      return {
+        id: source.id,
+        name: displayName,
+        type: source.display_id ? 'screen' : 'window',
+        thumbnail: source.thumbnail.toDataURL(),
+        appIcon: source.appIcon ? source.appIcon.toDataURL() : null,
+        isVisible: true // desktopCapturer only returns visible windows
+      };
+    });
     
     // On macOS, try to get additional windows including minimized ones
     if (process.platform === 'darwin') {
@@ -781,16 +792,70 @@ ipcMain.handle('get-capture-sources', async () => {
         // Create a map to track windows by app name for better deduplication
         const windowsByApp = new Map();
         
-        // First, add all desktopCapturer windows to the map
+        // Create a map to match desktopCapturer windows with their real app names from macWindowManager
+        const realAppNames = new Map();
+        
+        // First pass: try to match desktopCapturer windows with macWindowManager data to get real app names
+        for (const macWindow of allWindows) {
+          const macTitle = macWindow.windowTitle.toLowerCase();
+          const macApp = macWindow.appName;
+          
+          // Try to find matching desktopCapturer window
+          const matchingDesktopSource = formattedSources.find(source => {
+            if (source.type === 'screen') return false;
+            const sourceTitle = source.name.toLowerCase();
+            
+            // Exact match
+            if (sourceTitle === macTitle) return true;
+            
+            // For Cursor: match "filename — project" with "filename — project" 
+            if (macApp === 'Cursor' && sourceTitle.includes('—') && macTitle.includes('—')) {
+              return sourceTitle === macTitle;
+            }
+            
+            // For other apps: try partial matching
+            if (sourceTitle.includes(macTitle) || macTitle.includes(sourceTitle)) {
+              return true;
+            }
+            
+            return false;
+          });
+          
+          if (matchingDesktopSource) {
+            realAppNames.set(matchingDesktopSource.name, macApp);
+            safeLog.log(`🔗 Matched: "${matchingDesktopSource.name}" -> App: ${macApp}`);
+          }
+        }
+        
+        // Second pass: add all desktopCapturer windows to the map with correct app names
         formattedSources
           .filter(s => s.type === 'window')
           .forEach(source => {
-            const appName = source.name.split(' - ')[0];
+            // Use real app name if available, otherwise fall back to parsing window title
+            const realApp = realAppNames.get(source.name);
+            let appName = realApp || source.name.split(' - ')[0];
+            
+            // Apply Cursor-specific formatting if we know it's actually Cursor
+            let displayName = source.name;
+            if (realApp === 'Cursor') {
+              if (source.name.includes(' — ')) {
+                const parts = source.name.split(' — ');
+                if (parts.length >= 2) {
+                  const lastPart = parts[parts.length - 1];
+                  if (!lastPart.includes('.') && lastPart.length < 30) {
+                    displayName = `Cursor - ${lastPart}`;
+                  }
+                }
+              }
+            }
+            
             if (!windowsByApp.has(appName)) {
               windowsByApp.set(appName, []);
             }
             windowsByApp.get(appName).push({
               ...source,
+              name: displayName, // Use the corrected display name
+              appName: appName, // Store the real app name
               fromDesktopCapturer: true
             });
           });
@@ -1138,7 +1203,7 @@ ipcMain.handle('take-source-screenshot', async (event, sourceId) => {
             const buffer = image.toPNG();
             
             fs.writeFileSync(filepath, buffer);
-            saveDebugCopy(filepath, 'electron_selected_source', matchingSource.name);
+            // saveDebugCopy(filepath, 'electron_selected_source', matchingSource.name);
             
             const stats = fs.statSync(filepath);
             
@@ -1168,7 +1233,7 @@ ipcMain.handle('take-source-screenshot', async (event, sourceId) => {
             // Native capture successful
             
             fs.writeFileSync(filepath, captureResult.data);
-            saveDebugCopy(filepath, 'native_capture', appName);
+            // saveDebugCopy(filepath, 'native_capture', appName);
             
             const stats = fs.statSync(filepath);
             
@@ -1443,7 +1508,7 @@ except Exception as e:
                   const stats = fs.statSync(filepath);
                   
                   // CGWindowListCreateImage capture successful
-                  saveDebugCopy(filepath, 'cg_window_capture', targetWindow ? targetWindow.name : appName);
+                  // saveDebugCopy(filepath, 'cg_window_capture', targetWindow ? targetWindow.name : appName);
                   
                   return {
                     success: true,
@@ -1515,7 +1580,7 @@ except Exception as e:
       fs.writeFileSync(filepath, buffer);
       
       // Save debug copy
-      saveDebugCopy(filepath, 'electron_window', source.name);
+      // saveDebugCopy(filepath, 'electron_window', source.name);
       
       const stats = fs.statSync(filepath);
       
@@ -1546,7 +1611,7 @@ except Exception as e:
       fs.writeFileSync(filepath, buffer);
       
       // Save debug copy
-      saveDebugCopy(filepath, 'electron_screen', `Display ${source.display_id}`);
+      // saveDebugCopy(filepath, 'electron_screen', `Display ${source.display_id}`);
       
       const stats = fs.statSync(filepath);
       
@@ -1598,7 +1663,7 @@ ipcMain.handle('take-screenshot', async () => {
       fs.writeFileSync(filepath, imgBuffer);
       
       // Save debug copy
-      saveDebugCopy(filepath, 'fullscreen', 'primary_display');
+      // saveDebugCopy(filepath, 'fullscreen', 'primary_display');
       
     } catch (screenshotError) {
       safeLog.error('Screenshot capture failed:', screenshotError);
@@ -1655,7 +1720,7 @@ ipcMain.handle('take-screenshot-display', async (event, displayId = 0) => {
     fs.writeFileSync(filepath, imgBuffer);
     
     // Save debug copy
-    saveDebugCopy(filepath, 'display_capture', `display_${displayId}`);
+    // saveDebugCopy(filepath, 'display_capture', `display_${displayId}`);
     
     safeLog.log(`Screenshot of display ${displayId} saved: ${filepath}`);
     
@@ -1675,27 +1740,27 @@ ipcMain.handle('take-screenshot-display', async (event, displayId = 0) => {
   }
 });
 
-// IPC handler for saving debug comparison images
-ipcMain.handle('save-debug-comparison-image', async (event, imageBuffer, filename) => {
-  try {
-    const compareDir = ensureDebugCompareDirectory();
-    const filepath = path.join(compareDir, filename);
-    
-    fs.writeFileSync(filepath, Buffer.from(imageBuffer));
-    console.log(`💾 Saved comparison image: ${filepath}`);
-    
-    return {
-      success: true,
-      filepath: filepath
-    };
-  } catch (error) {
-    console.error('Failed to save comparison image:', error);
-    return {
-      success: false,
-      error: error.message
-    };
-  }
-});
+// IPC handler for saving debug comparison images - DISABLED
+// ipcMain.handle('save-debug-comparison-image', async (event, imageBuffer, filename) => {
+//   try {
+//     const compareDir = ensureDebugCompareDirectory();
+//     const filepath = path.join(compareDir, filename);
+//     
+//     fs.writeFileSync(filepath, Buffer.from(imageBuffer));
+//     console.log(`💾 Saved comparison image: ${filepath}`);
+//     
+//     return {
+//       success: true,
+//       filepath: filepath
+//     };
+//   } catch (error) {
+//     console.error('Failed to save comparison image:', error);
+//     return {
+//       success: false,
+//       error: error.message
+//     };
+//   }
+// });
 
 // IPC handler for getting available displays
 ipcMain.handle('list-displays', async () => {
