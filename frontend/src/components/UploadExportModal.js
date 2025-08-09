@@ -94,7 +94,7 @@ function UploadExportModal({ isOpen, onClose, settings }) {
         });
       } else {
         const errorData = await response.json();
-        const detail = (errorData && errorData.detail) ? String(errorData.detail) : '';
+        const detail = String(errorData?.detail || '');
         const localized =
           detail.includes('At least one sheet must be visible') ? t('uploadExport.errors.atLeastOneSheetVisible') :
           detail.includes('No data') ? t('uploadExport.errors.noData') :

@@ -81,8 +81,7 @@ const resources = {
         clear: 'Clear',
         clearTitle: 'Clear chat',
         welcome: {
-          title: 'Welcome to MIRIX!'
-,
+          title: 'Welcome to MIRIX!',
           subtitle: 'Start a conversation with your AI assistant.',
           desktop: 'MIRIX is running in the desktop app environment.',
           web: 'Download the desktop app for an enhanced experience and more features!'
@@ -261,6 +260,7 @@ const resources = {
           saving: 'Saving...',
           clearSearch: 'Clear search',
           expandDetails: 'Expand details',
+          collapseDetails: 'Collapse details',
           hideDetails: 'Hide Details',
           showDetails: 'Show Details'
         },
@@ -630,6 +630,7 @@ const resources = {
           saving: '保存中...',
           clearSearch: '清除搜索',
           expandDetails: '展开详情',
+          collapseDetails: '折叠详情',
           hideDetails: '隐藏详情',
           showDetails: '显示详情'
         },

@@ -366,7 +366,7 @@ const ExistingMemory = ({ settings }) => {
                 <button 
                   className="expand-toggle-button"
                   onClick={() => toggleExpanded(episodicItemId)}
-                  title={isEpisodicExpanded ? t('memory.actions.expandDetails') : t('memory.actions.expandDetails')}
+                  title={isEpisodicExpanded ? t('memory.actions.expandDetails') : t('memory.actions.collapseDetails')}
                 >
                   {isEpisodicExpanded ? `▼ ${t('memory.actions.hideDetails')}` : `▶ ${t('memory.actions.showDetails')}`}
                 </button>
@@ -390,7 +390,7 @@ const ExistingMemory = ({ settings }) => {
                 <button 
                   className="expand-toggle-button"
                   onClick={() => toggleExpanded(itemId)}
-                  title={isExpanded ? t('memory.actions.expandDetails') : t('memory.actions.expandDetails')}
+                  title={isExpanded ? t('memory.actions.expandDetails') : t('memory.actions.collapseDetails')}
                 >
                   {isExpanded ? `▼ ${t('memory.actions.hideDetails')}` : `▶ ${t('memory.actions.showDetails')}`}
                 </button>

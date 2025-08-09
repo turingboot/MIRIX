@@ -3,8 +3,8 @@ import './ClearChatModal.css';
 import { useTranslation } from 'react-i18next';
 
 const ClearChatModal = ({ isOpen, onClose, onClearLocal, onClearPermanent, isClearing }) => {
-  if (!isOpen) return null;
   const { t } = useTranslation();
+  if (!isOpen) return null;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
