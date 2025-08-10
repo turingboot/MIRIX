@@ -28,7 +28,7 @@ class Mirix:
         self,
         api_key: str,
         model_provider: str = "google_ai",
-        model: str = "gemini-2.0-flash",
+        model: Optional[str] = None,
         config_path: Optional[str] = None,
         load_from: Optional[str] = None,
         **kwargs
@@ -39,7 +39,7 @@ class Mirix:
         Args:
             api_key: API key for LLM provider (required)
             model_provider: LLM provider name (default: "google_ai")
-            model: Model to use (default: "gemini-2.0-flash")
+            model: Model to use (optional). If None, uses model from config file.
             config_path: Path to custom config file (optional)
             load_from: Path to backup directory to restore from (optional)
         """
@@ -59,6 +59,9 @@ class Mirix:
         
         # Force reload of model_settings to pick up new environment variables
         self._reload_model_settings()
+        
+        # Track if config_path was originally provided
+        config_path_provided = config_path is not None
         
         # Use default config if not specified
         if not config_path:
@@ -88,11 +91,20 @@ class Mirix:
         # Initialize the underlying agent (with optional backup restore)
         self._agent = AgentWrapper(str(config_path), load_from=load_from)
         
-        # # Override model provider and model
-        # self._agent.llm_config.model_provider = model_provider
-        # self._agent.llm_config.model = model
-        self._agent.set_model(model)
-        self._agent.set_memory_model(model)
+        # Handle model configuration based on parameters:
+        # Case 1: model given, config_path None -> load default config then set provided model
+        # Case 2: model None, config_path given -> load from config_path and use model from config
+        # Case 3: model None, config_path None -> load default config and use default model
+        if model is not None:
+            # Model explicitly provided - override the config file's model
+            self._agent.set_model(model)
+            self._agent.set_memory_model(model)
+        elif not config_path_provided:
+            # No model or config provided - use default model
+            default_model = "gemini-2.0-flash"
+            self._agent.set_model(default_model)
+            self._agent.set_memory_model(default_model)
+        # If model is None and config_path was provided, use the model specified in the config file (no override needed)
     
     def add(self, content: str, **kwargs) -> Dict[str, Any]:
         """
