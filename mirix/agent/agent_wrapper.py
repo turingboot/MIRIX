@@ -1571,12 +1571,13 @@ Please perform this analysis and create new memories as appropriate. Provide a d
                         'text': f"Additional images (screenshots) from the system start here:"
                     })
 
-                    for idx, (timestamp, file_ref) in enumerate(most_recent_images):
+                    for idx, (timestamp, file_ref, source) in enumerate(most_recent_images):
                         
                         if hasattr(file_ref, 'uri'):
+                            source_text = f"; Screenshot from App: {source}" if source else ""
                             extra_messages.append({
                                 'type': 'text',
-                                'text': f"Timestamp: {timestamp} Image Index {idx}:"
+                                'text': f"Timestamp: {timestamp}; Image Index {idx}" + source_text
                             })
                             extra_messages.append({
                                 'type': 'google_cloud_file_uri',
@@ -1585,6 +1586,11 @@ Please perform this analysis and create new memories as appropriate. Provide a d
                         else:
                             # For non-GEMINI models, convert local file paths to base64
                             try:
+                                source_text = f"; Screenshot from App: {source_text}" if source else ""
+                                extra_messages.append({
+                                    'type': 'text',
+                                    'text': f"Timestamp: {timestamp}; Image Index {idx}" + source_text
+                                })
                                 mime_type = get_image_mime_type(file_ref)
                                 base64_data = encode_image(file_ref)
                                 extra_messages.append({
