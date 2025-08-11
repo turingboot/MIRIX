@@ -233,7 +233,11 @@ class TemporaryMessageAccumulator:
                     return []
     
     def get_recent_images_for_chat(self, current_timestamp):
-        """Get the most recent images for chat context (non-blocking)."""
+        """Get the most recent images for chat context (non-blocking).
+        
+        Returns:
+            List of tuples: (timestamp, file_ref, sources) where sources may be None
+        """
         with self._temporary_messages_lock:
             # Get the most recent content
             recent_limit = min(self.temporary_message_limit, len(self.temporary_messages))
@@ -295,7 +299,9 @@ class TemporaryMessageAccumulator:
                                     continue  # Still pending, skip
                                     
                         # For non-GEMINI models: file_ref is already the image URI, use as-is
-                        most_recent_images.append((timestamp, file_ref))
+                        # Include sources information if available
+                        sources = item.get('sources')
+                        most_recent_images.append((timestamp, file_ref, sources[j] if sources else None))
             
             return most_recent_images
     

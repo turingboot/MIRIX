@@ -477,6 +477,12 @@ def trigger_memory_update(self: "Agent", user_message: object, memory_types: Lis
             else:
                 raise ValueError(f"Memory type '{memory_type}' is not supported. Please choose from 'core', 'episodic', 'resource', 'procedural', 'knowledge_vault', 'semantic'.")
         
+        if user_message['message'][-1]['text'].startswith('[System Message]'):
+            user_message['message'] = user_message['message'][:-1]
+            user_message['message'].append([
+                {'type': 'text', 'text': "[System Message] Interpret the provided content, according to what the user is doing, extract the important information matching your memory type and save it into the memory."}
+            ])
+
         # Prepare payloads for message queue
         payloads = {
             'message': user_message['message'],
