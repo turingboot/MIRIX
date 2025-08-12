@@ -152,3 +152,19 @@ class ProviderManager:
         if len(openai_provider) != 0:
             return openai_provider[0].api_key
         return None
+
+    @enforce_types
+    def get_azure_openai_override_provider_id(self) -> Optional[str]:
+        """Helper function to fetch custom azure openai provider id for v0 BYOK feature"""
+        azure_openai_provider = [provider for provider in self.list_providers() if provider.name == "azure_openai"]
+        if len(azure_openai_provider) != 0:
+            return azure_openai_provider[0].id
+        return None
+
+    @enforce_types
+    def get_azure_openai_override_key(self) -> Optional[str]:
+        """Helper function to fetch custom azure openai key for v0 BYOK feature"""
+        azure_openai_provider = [provider for provider in self.list_providers() if provider.name == "azure_openai"]
+        if len(azure_openai_provider) != 0:
+            return azure_openai_provider[0].api_key
+        return None
