@@ -403,6 +403,10 @@ def trigger_memory_update_with_instruction(self: "Agent", user_message: object, 
     client = create_client()
     agents = client.list_agents()
 
+    # Validate that user_message is a dictionary
+    if not isinstance(user_message, dict):
+        raise TypeError(f"user_message must be a dictionary, got {type(user_message).__name__}: {user_message}")
+
     # Fallback to sequential processing for backward compatibility
     response = ''
 
@@ -421,16 +425,22 @@ def trigger_memory_update_with_instruction(self: "Agent", user_message: object, 
     else:
         raise ValueError(f"Memory type '{memory_type}' is not supported. Please choose from 'core', 'episodic', 'resource', 'procedural', 'knowledge_vault', 'semantic'.")
 
+    matching_agent = None
     for agent in agents:
         if agent.agent_type == agent_type:
-            client.send_message(agent_id=agent.id, 
-                role='user', 
-                message="[Message from Chat Agent (Now you are allowed to make multiple function calls sequentially)] " + instruction, 
-                existing_file_uris=user_message['existing_file_uris'],
-                chaining=True,
-                retrieved_memories=user_message.get('retrieved_memories', None)
-            )
-            response += '[System Message] Agent ' + agent.name + ' has been triggered to update the memory.\n'
+            matching_agent = agent
+            break
+    
+    if matching_agent is None:
+        raise ValueError(f"No agent found with type '{agent_type}'")
+    
+    client.send_message(agent_id=matching_agent.id, 
+        role='user', 
+        message="[Message from Chat Agent (Now you are allowed to make multiple function calls sequentially)] " +instruction, 
+        existing_file_uris=user_message['existing_file_uris'],
+        retrieved_memories=user_message.get('retrieved_memories', None)
+    )
+    response += '[System Message] Agent ' + matching_agent.name + ' has been triggered to update the memory.\n'
 
     return response.strip()
 
@@ -449,6 +459,10 @@ def trigger_memory_update(self: "Agent", user_message: object, memory_types: Lis
 
     client = create_client()
     agents = client.list_agents()
+
+    # Validate that user_message is a dictionary
+    if not isinstance(user_message, dict):
+        raise TypeError(f"user_message must be a dictionary, got {type(user_message).__name__}: {user_message}")
 
     if 'message_queue' in user_message:
         
@@ -477,12 +491,6 @@ def trigger_memory_update(self: "Agent", user_message: object, memory_types: Lis
             else:
                 raise ValueError(f"Memory type '{memory_type}' is not supported. Please choose from 'core', 'episodic', 'resource', 'procedural', 'knowledge_vault', 'semantic'.")
         
-        if user_message['message'][-1]['text'].startswith('[System Message]'):
-            user_message['message'] = user_message['message'][:-1]
-            user_message['message'].append([
-                {'type': 'text', 'text': "[System Message] Interpret the provided content, according to what the user is doing, extract the important information matching your memory type and save it into the memory."}
-            ])
-
         # Prepare payloads for message queue
         payloads = {
             'message': user_message['message'],
@@ -497,11 +505,15 @@ def trigger_memory_update(self: "Agent", user_message: object, memory_types: Lis
 
         # Use ThreadPoolExecutor for parallel processing
         with ThreadPoolExecutor(max_workers=len(valid_agent_types)) as pool:
-            futures = [
-                pool.submit(message_queue.send_message_in_queue, 
-                           client, [agent for agent in agents if agent.agent_type == agent_type][0].id, payloads, agent_type) 
-                for agent_type in valid_agent_types
-            ]
+            futures = []
+            for agent_type in valid_agent_types:
+                matching_agents = [agent for agent in agents if agent.agent_type == agent_type]
+                if not matching_agents:
+                    raise ValueError(f"No agent found with type '{agent_type}'")
+                futures.append(
+                    pool.submit(message_queue.send_message_in_queue, 
+                               client, matching_agents[0].id, payloads, agent_type)
+                )
             
             for future in tqdm(as_completed(futures), total=len(futures)):
                 response, agent_type = future.result()
@@ -533,15 +545,22 @@ def trigger_memory_update(self: "Agent", user_message: object, memory_types: Lis
             else:
                 raise ValueError(f"Memory type '{memory_type}' is not supported. Please choose from 'core', 'episodic', 'resource', 'procedural', 'knowledge_vault', 'semantic'.")
 
+            matching_agent = None
             for agent in agents:
                 if agent.agent_type == agent_type:
-                    client.send_message(agent_id=agent.id, 
-                        role='user', 
-                        message=user_message['message'], 
-                        existing_file_uris=user_message['existing_file_uris'],
-                        retrieved_memories=user_message.get('retrieved_memories', None)
-                    )
-                    response += '[System Message] Agent ' + agent.name + ' has been triggered to update the memory.\n'
+                    matching_agent = agent
+                    break
+            
+            if matching_agent is None:
+                raise ValueError(f"No agent found with type '{agent_type}'")
+            
+            client.send_message(agent_id=matching_agent.id, 
+                role='user', 
+                message=user_message['message'], 
+                existing_file_uris=user_message['existing_file_uris'],
+                retrieved_memories=user_message.get('retrieved_memories', None)
+            )
+            response += '[System Message] Agent ' + matching_agent.name + ' has been triggered to update the memory.\n'
         
         return response.strip()
 
