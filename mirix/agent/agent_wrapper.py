@@ -107,6 +107,7 @@ class AgentWrapper():
         self.agent_config = agent_config
         self.agent_name = agent_config['agent_name']
         self.model_name = agent_config['model_name']
+        self.model_provider = agent_config.get('model_provider', None)
         self.is_screen_monitor = agent_config.get('is_screen_monitor', False)
         self.chat_agent_standalone = True
 
@@ -539,35 +540,81 @@ class AgentWrapper():
         
         self.active_persona_name = persona_name
 
-    def set_model(self, model_name: str, custom_agent_config: dict = None) -> dict:
+    def _determine_model_provider(self, model_name: str, custom_agent_config: dict = None) -> str:
         """
-        Set the model for the agent.
-        Returns a dictionary with success status and any missing API keys.
+        Determine the effective model provider based on configuration override or model defaults.
+        Returns the provider type (e.g., 'openai', 'azure_openai', 'google_ai', 'anthropic').
         """
-        try:
-            self.model_name = model_name
+        # Check for provider override in custom_agent_config first
+        if custom_agent_config and custom_agent_config.get('model_provider'):
+            return custom_agent_config['model_provider']
+        
+        # Check for provider override in instance config
+        if self.model_provider:
+            return self.model_provider
+        
+        # Fall back to default provider based on model
+        if model_name in GEMINI_MODELS:
+            return "google_ai"
+        elif 'claude' in model_name.lower():
+            return "anthropic"
+        elif model_name in OPENAI_MODELS:
+            return "openai"
+        else:
+            raise ValueError(f"Invalid model provider: {model_name}")
+    
+    def _create_llm_config_for_provider(self, model_name: str, provider: str, custom_agent_config: dict = None) -> 'LLMConfig':
+        """
+        Create LLMConfig based on the specified provider.
+        """
+        if provider == "azure_openai":
+            # Azure OpenAI configuration
+            endpoint = (custom_agent_config.get('model_endpoint') if custom_agent_config 
+                       else self.agent_config.get('model_endpoint', 'https://your-resource.openai.azure.com/'))
+            api_version = (custom_agent_config.get('api_version') if custom_agent_config 
+                          else self.agent_config.get('api_version', '2024-10-01-preview'))
+            azure_deployment = (custom_agent_config.get('azure_deployment') if custom_agent_config 
+                               else self.agent_config.get('azure_deployment', model_name))
             
-            # Create LLM config manually to ensure it picks up updated API keys from model_settings
+            # Get custom API key if provided
+            api_key = None
+            if custom_agent_config and custom_agent_config.get('api_key'):
+                api_key = custom_agent_config['api_key']
+            elif self.agent_config.get('api_key'):
+                api_key = self.agent_config['api_key']
+            
+            llm_config = LLMConfig(
+                model=model_name,
+                model_endpoint_type="azure_openai",
+                model_endpoint=endpoint,
+                context_window=128000,
+                # Use the new schema fields instead of dynamic assignment
+                api_version=api_version,
+                azure_endpoint=endpoint,
+                azure_deployment=azure_deployment,
+                api_key=api_key
+            )
+                
+        elif provider == "google_ai":
+            llm_config = LLMConfig(
+                model_endpoint_type="google_ai",
+                model_endpoint="https://generativelanguage.googleapis.com",
+                model=model_name,
+                context_window=1000000
+            )
+            
+        elif provider == "anthropic":
+            llm_config = LLMConfig(
+                model_endpoint_type="anthropic",
+                model_endpoint="https://api.anthropic.com/v1",
+                model=model_name,
+                context_window=200000
+            )
+            
+        elif provider == "openai":
             if model_name == 'gpt-4o-mini' or model_name == 'gpt-4o':
                 llm_config = LLMConfig.default_config(model_name)
-
-            elif model_name in GEMINI_MODELS:
-                llm_config = LLMConfig(
-                    model_endpoint_type="google_ai",
-                    model_endpoint="https://generativelanguage.googleapis.com",
-                    model=model_name,
-                    context_window=1000000
-                )
-
-            elif 'claude' in model_name.lower():
-                llm_config = LLMConfig(
-                    model_endpoint_type="anthropic",
-                    model_endpoint="https://api.anthropic.com/v1",
-                    model=model_name,
-                    context_window=200000
-                )
-
-            elif model_name in OPENAI_MODELS:
+            else:
                 llm_config = LLMConfig(
                     model=model_name,
                     model_endpoint_type="openai",
@@ -575,8 +622,9 @@ class AgentWrapper():
                     model_wrapper=None,
                     context_window=128000,
                 )
-
-            elif custom_agent_config is not None:
+        else:
+            # Custom provider - use custom config or fallback to OpenAI-compatible
+            if custom_agent_config is not None:
                 assert 'model_endpoint' in custom_agent_config, "model_endpoint is required for custom models"
                 llm_config = LLMConfig(
                     model=model_name,
@@ -584,9 +632,8 @@ class AgentWrapper():
                     model_endpoint=custom_agent_config['model_endpoint'],
                     model_wrapper=None,
                     api_key=custom_agent_config.get('api_key'),
-                    **custom_agent_config['generation_config']
+                    **custom_agent_config.get('generation_config', {})
                 )
-
             else:
                 assert 'model_endpoint' in self.agent_config, "model_endpoint is required for custom models"
                 llm_config = LLMConfig(
@@ -595,8 +642,24 @@ class AgentWrapper():
                     model_endpoint=self.agent_config['model_endpoint'],
                     model_wrapper=None,
                     api_key=self.agent_config.get('api_key'),
-                    **self.agent_config['generation_config']
+                    **self.agent_config.get('generation_config', {})
                 )
+        
+        return llm_config
+
+    def set_model(self, model_name: str, custom_agent_config: dict = None) -> dict:
+        """
+        Set the model for the agent.
+        Returns a dictionary with success status and any missing API keys.
+        """
+        try:
+            self.model_name = model_name
+            
+            # Determine the effective provider
+            provider = self._determine_model_provider(model_name, custom_agent_config)
+            
+            # Create LLM config based on provider
+            llm_config = self._create_llm_config_for_provider(model_name, provider, custom_agent_config)
             
             # Update LLM config for the client
             self.client.set_default_llm_config(llm_config)
@@ -642,91 +705,16 @@ class AgentWrapper():
         # Define allowed memory models
         ALLOWED_MEMORY_MODELS = GEMINI_MODELS + OPENAI_MODELS
 
-        # Validate the model
-        if new_model not in ALLOWED_MEMORY_MODELS:
-            # For custom models, allow them to proceed with validation
-            if custom_agent_config is not None:
-                assert 'model_endpoint' in custom_agent_config, "model_endpoint is required for custom models"
+        # Determine the effective provider
+        provider = self._determine_model_provider(new_model, custom_agent_config)
 
-                llm_config = LLMConfig(
-                    model=new_model,
-                    model_endpoint_type="openai",
-                    model_endpoint=custom_agent_config['model_endpoint'],
-                    model_wrapper=None,
-                    api_key=custom_agent_config.get('api_key'),
-                    **custom_agent_config['generation_config']
-                )
-            
-            elif hasattr(self, 'agent_config') and 'model_endpoint' in self.agent_config:
-                llm_config = LLMConfig(
-                    model=new_model,
-                    model_endpoint_type="openai",
-                    model_endpoint=self.agent_config['model_endpoint'],
-                    model_wrapper=None,
-                    api_key=self.agent_config.get('api_key'),
-                    **self.agent_config['generation_config']
-                )
-            
-            else:
-                # Invalid model and no custom config
-                self.logger.warning(f'Invalid memory model. Only {", ".join(ALLOWED_MEMORY_MODELS)} are supported.')
-                return {
-                    'success': False,
-                    'message': f'Invalid memory model. Only {", ".join(ALLOWED_MEMORY_MODELS)} are supported.',
-                    'missing_keys': [],
-                    'model_requirements': {
-                        'current_model': new_model,
-                        'required_keys': []
-                    }
-                }
-        
-        else:
-            # Check if it's a Gemini model
-            if new_model in GEMINI_MODELS:
-                llm_config = LLMConfig(
-                    model_endpoint_type="google_ai",
-                    model_endpoint="https://generativelanguage.googleapis.com",
-                    model=new_model,
-                    context_window=100000
-                )
-                
-                # Check for Gemini API key availability
-                if not self.is_gemini_client_initialized():
-                    return {
-                        'success': False,
-                        'message': f'Memory model set to {new_model}, but Gemini API key is required.',
-                        'missing_keys': ['GEMINI_API_KEY'],
-                        'model_requirements': {
-                            'current_model': new_model,
-                            'required_keys': ['GEMINI_API_KEY']
-                        }
-                    }
-            
-            # Check if it's an OpenAI model
-            elif new_model in OPENAI_MODELS:
-                llm_config = LLMConfig(
-                    model=new_model,
-                    model_endpoint_type="openai",
-                    model_endpoint="https://api.openai.com/v1",
-                    model_wrapper=None,
-                    context_window=128000,
-                )
-                
-                # Check for OpenAI API key availability
-                openai_override_key = self.client.server.provider_manager.get_openai_override_key()
-                has_openai_key = openai_override_key or model_settings.openai_api_key
-                
-                if not has_openai_key:
-                    return {
-                        'success': False,
-                        'message': f'Memory model set to {new_model}, but OpenAI API key is required.',
-                        'missing_keys': ['OPENAI_API_KEY'],
-                        'model_requirements': {
-                            'current_model': new_model,
-                            'required_keys': ['OPENAI_API_KEY']
-                        }
-                    }
-        
+        # Validate the model - allow custom models to proceed with validation
+        if new_model not in ALLOWED_MEMORY_MODELS and not custom_agent_config and not hasattr(self, 'agent_config'):
+            # Invalid model and no custom config
+            self.logger.warning(f'Invalid memory model. Only {", ".join(ALLOWED_MEMORY_MODELS)} are supported.')
+
+        llm_config = self._create_llm_config_for_provider(new_model, provider, custom_agent_config)
+
         # Update only the memory-related agents (all agents except chat_agent)
         memory_agent_names = [
             'episodic_memory_agent',

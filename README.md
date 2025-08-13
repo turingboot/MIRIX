@@ -36,7 +36,7 @@ Then you can run the following python code:
 from mirix.agent import AgentWrapper
 
 # Initialize agent with configuration
-agent = AgentWrapper("./configs/mirix.yaml")
+agent = AgentWrapper("./mirix/configs/mirix.yaml")
 
 # Send basic text information
 agent.send_message(

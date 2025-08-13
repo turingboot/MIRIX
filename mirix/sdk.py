@@ -77,14 +77,14 @@ class Mirix:
                 
                 if not config_path.exists():
                     # 3. Look in current working directory
-                    config_path = Path("./configs/mirix.yaml")
+                    config_path = Path("./mirix/configs/mirix.yaml")
                     
                     if not config_path.exists():
                         raise FileNotFoundError(
                             f"Could not find mirix.yaml config file. Searched in:\n"
                             f"  - {package_dir / 'configs' / 'mirix.yaml'}\n"
                             f"  - {package_dir.parent / 'configs' / 'mirix.yaml'}\n"
-                            f"  - {Path('./configs/mirix.yaml').absolute()}\n"
+                            f"  - {Path('./mirix/configs/mirix.yaml').absolute()}\n"
                             f"Please provide config_path parameter or ensure config file exists."
                         )
         
@@ -314,7 +314,7 @@ class Mirix:
         
         # Update the global singleton instance with new values
         import mirix.settings
-        for field_name in new_settings.model_fields:
+        for field_name in ModelSettings.model_fields:
             setattr(mirix.settings.model_settings, field_name, getattr(new_settings, field_name))
     
     def __call__(self, message: str) -> str:
