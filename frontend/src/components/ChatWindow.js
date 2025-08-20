@@ -18,6 +18,8 @@ const ChatWindow = ({ settings, messages, setMessages, isScreenMonitoring }) => 
   // Clear chat modal state
   const [showClearModal, setShowClearModal] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
+  // Gmail confirmation state
+  const [confirmationRequest, setConfirmationRequest] = useState(null);
   const messagesEndRef = useRef(null);
   const abortControllersRef = useRef(new Map());
   const { t } = useTranslation();
@@ -432,6 +434,14 @@ const ChatWindow = ({ settings, messages, setMessages, isScreenMonitoring }) => 
                 setCurrentModelType(data.model_type);
                 setShowApiKeyModal(true);
                 return; // Don't continue processing
+              } else if (data.type === 'confirmation_request') {
+                // Handle Gmail confirmation request
+                setConfirmationRequest({
+                  id: data.confirmation_id,
+                  type: data.confirmation_type,
+                  details: data.details
+                });
+                return; // Don't continue processing
               } else if (data.type === 'final') {
                 const assistantMessage = {
                   id: Date.now() + 1,
@@ -544,6 +554,40 @@ const ChatWindow = ({ settings, messages, setMessages, isScreenMonitoring }) => 
     abortControllersRef.current.forEach((controller) => {
       controller.abort();
     });
+  };
+
+  const handleConfirmationResponse = async (confirmed) => {
+    if (!confirmationRequest) return;
+    
+    try {
+      const response = await queuedFetch(`${settings.serverUrl}/confirmation/respond`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          confirmation_id: confirmationRequest.id,
+          confirmed: confirmed
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to send confirmation: ${response.status}`);
+      }
+
+      // Close the confirmation dialog
+      setConfirmationRequest(null);
+    } catch (error) {
+      console.error('Error sending confirmation:', error);
+      // Show error message
+      const errorMessage = {
+        id: Date.now(),
+        type: 'error',
+        content: `❌ Failed to send confirmation: ${error.message}`,
+        timestamp: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    }
   };
 
   const toggleScreenshotSetting = async () => {
@@ -675,6 +719,62 @@ const ChatWindow = ({ settings, messages, setMessages, isScreenMonitoring }) => 
         onClearPermanent={clearChatPermanent}
         isClearing={isClearing}
       />
+
+      {/* Gmail Confirmation Modal */}
+      {confirmationRequest && confirmationRequest.type === 'gmail_send' && (
+        <div className="modal-overlay" onClick={() => setConfirmationRequest(null)}>
+          <div className="modal-content gmail-confirmation-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>📧 Gmail Send Confirmation</h3>
+              <button className="close-button" onClick={() => setConfirmationRequest(null)}>×</button>
+            </div>
+            <div className="modal-body">
+              <p><strong>Please confirm sending this email:</strong></p>
+              <div className="email-details">
+                <div className="email-field">
+                  <strong>To:</strong> {confirmationRequest.details.to}
+                </div>
+                <div className="email-field">
+                  <strong>Subject:</strong> {confirmationRequest.details.subject}
+                </div>
+                {confirmationRequest.details.cc && confirmationRequest.details.cc.length > 0 && (
+                  <div className="email-field">
+                    <strong>CC:</strong> {confirmationRequest.details.cc.join(', ')}
+                  </div>
+                )}
+                {confirmationRequest.details.bcc && confirmationRequest.details.bcc.length > 0 && (
+                  <div className="email-field">
+                    <strong>BCC:</strong> {confirmationRequest.details.bcc.join(', ')}
+                  </div>
+                )}
+                <div className="email-field">
+                  <strong>Body:</strong>
+                  <div className="email-body">{confirmationRequest.details.body}</div>
+                </div>
+                {confirmationRequest.details.attachments && confirmationRequest.details.attachments.length > 0 && (
+                  <div className="email-field">
+                    <strong>Attachments:</strong> {confirmationRequest.details.attachments.join(', ')}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button 
+                className="action-button cancel-button" 
+                onClick={() => handleConfirmationResponse(false)}
+              >
+                ❌ Cancel
+              </button>
+              <button 
+                className="action-button confirm-button" 
+                onClick={() => handleConfirmationResponse(true)}
+              >
+                ✅ Send Email
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

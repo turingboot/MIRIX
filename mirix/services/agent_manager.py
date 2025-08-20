@@ -7,7 +7,7 @@ from sqlalchemy import Select, func, literal, select, union_all
 from mirix.constants import (
     CORE_MEMORY_TOOLS, BASE_TOOLS, MAX_EMBEDDING_DIM,
     EPISODIC_MEMORY_TOOLS, PROCEDURAL_MEMORY_TOOLS, SEMANTIC_MEMORY_TOOLS,
-    RESOURCE_MEMORY_TOOLS, KNOWLEDGE_VAULT_TOOLS, META_MEMORY_TOOLS, UNIVERSAL_MEMORY_TOOLS, CHAT_AGENT_TOOLS, SEARCH_MEMORY_TOOLS, EXTRAS_TOOLS
+    RESOURCE_MEMORY_TOOLS, KNOWLEDGE_VAULT_TOOLS, META_MEMORY_TOOLS, UNIVERSAL_MEMORY_TOOLS, CHAT_AGENT_TOOLS, SEARCH_MEMORY_TOOLS, EXTRAS_TOOLS, MCP_TOOLS
 )
 from mirix.embeddings import embedding_model
 from mirix.log import get_logger
@@ -17,6 +17,7 @@ from mirix.orm import Tool as ToolModel
 from mirix.orm.errors import NoResultFound
 from mirix.orm.sandbox_config import AgentEnvironmentVariable as AgentEnvironmentVariableModel
 from mirix.orm.sqlite_functions import adapt_array
+from mirix.orm.enums import ToolType
 from mirix.schemas.agent import AgentState as PydanticAgentState
 from mirix.schemas.agent import AgentType, CreateAgent, UpdateAgent
 from mirix.schemas.block import Block as PydanticBlock
@@ -89,7 +90,7 @@ class AgentManager:
         if agent_create.tools:
             tool_names.extend(agent_create.tools)
         if agent_create.agent_type == AgentType.chat_agent:
-            tool_names.extend(CHAT_AGENT_TOOLS + EXTRAS_TOOLS)
+            tool_names.extend(CHAT_AGENT_TOOLS + EXTRAS_TOOLS + MCP_TOOLS)
         if agent_create.agent_type == AgentType.episodic_memory_agent:
             tool_names.extend(EPISODIC_MEMORY_TOOLS + UNIVERSAL_MEMORY_TOOLS)
         if agent_create.agent_type == AgentType.procedural_memory_agent:
@@ -187,11 +188,23 @@ class AgentManager:
         existing_tool_names = set([tool.name for tool in existing_tools])
         existing_tool_ids = [tool.id for tool in existing_tools]
         
+        # Separate MCP tools from native tools - preserve MCP tools
+        mcp_tools = [tool for tool in existing_tools if tool.tool_type == ToolType.MIRIX_MCP]
+        mcp_tool_names = set([tool.name for tool in mcp_tools])
+        mcp_tool_ids = [tool.id for tool in mcp_tools]
+        
         new_tool_names = [tool_name for tool_name in tool_names if tool_name not in existing_tool_names]
-        tool_names_to_remove = [tool_name for tool_name in existing_tool_names if tool_name not in tool_names]
+        # Only remove non-MCP tools that aren't in the expected tool list
+        tool_names_to_remove = [tool_name for tool_name in existing_tool_names 
+                               if tool_name not in tool_names and tool_name not in mcp_tool_names]
 
-        # Start with existing tool IDs
+        # Start with existing tool IDs, ensuring MCP tools are always preserved
         tool_ids = existing_tool_ids.copy()
+        
+        # Ensure all MCP tools are preserved (in case they were missed)
+        for mcp_tool_id in mcp_tool_ids:
+            if mcp_tool_id not in tool_ids:
+                tool_ids.append(mcp_tool_id)
         
         # Add new tools
         if len(new_tool_names) > 0:
@@ -321,6 +334,25 @@ class AgentManager:
         return agent_state
 
     @enforce_types
+    def update_mcp_tools(self, agent_id: str, mcp_tools: List[str], actor: PydanticUser, tool_ids: List[str]) -> PydanticAgentState:
+        """Update the MCP tools connected to an agent."""
+        return self.update_agent(agent_id=agent_id, agent_update=UpdateAgent(mcp_tools=mcp_tools, tool_ids=tool_ids), actor=actor)
+
+    @enforce_types
+    def add_mcp_tool(self, agent_id: str, mcp_tool_name: str, tool_ids: List[str], actor: PydanticUser) -> PydanticAgentState:
+        """Add a single MCP tool to an agent."""
+        # First get the current agent state
+        agent_state = self.get_agent_by_id(agent_id=agent_id, actor=actor)
+        current_mcp_tools = agent_state.mcp_tools or []
+        
+        # Add the new MCP tool if not already present
+        if mcp_tool_name not in current_mcp_tools:
+            current_mcp_tools.append(mcp_tool_name)
+            return self.update_mcp_tools(agent_id=agent_id, mcp_tools=current_mcp_tools, actor=actor, tool_ids=tool_ids)
+        
+        return agent_state
+
+    @enforce_types
     def _update_agent(self, agent_id: str, agent_update: UpdateAgent, actor: PydanticUser) -> PydanticAgentState:
         """
         Update an existing agent.
@@ -338,7 +370,7 @@ class AgentManager:
             agent = AgentModel.read(db_session=session, identifier=agent_id, actor=actor)
 
             # Update scalar fields directly
-            scalar_fields = {"name", "system", "topic", "llm_config", "embedding_config", "message_ids", "tool_rules", "description", "metadata_"}
+            scalar_fields = {"name", "system", "topic", "llm_config", "embedding_config", "message_ids", "tool_rules", "description", "metadata_", "mcp_tools"}
             for field in scalar_fields:
                 value = getattr(agent_update, field, None)
                 if value is not None:

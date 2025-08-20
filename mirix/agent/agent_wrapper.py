@@ -239,6 +239,12 @@ class AgentWrapper():
         self.set_model(self.model_name)
         self.set_memory_model(self.model_name)
         
+        if self.client.server.agent_manager.get_agent_by_id(self.agent_states.agent_state.id, actor=self.client.user).mcp_tools is not None:
+            for mcp_tool in self.client.server.agent_manager.get_agent_by_id(self.agent_states.agent_state.id, actor=self.client.user).mcp_tools:
+                if mcp_tool == 'gmail-native':
+                    # Check and connect to Gmail if credentials exist
+                    self._check_and_connect_gmail()
+        
         # Initialize temporary message accumulator for ALL mirix models
         self.temp_message_accumulator = TemporaryMessageAccumulator(
             client=self.client,
@@ -482,6 +488,156 @@ class AgentWrapper():
             self.existing_files = []
             self.uri_to_create_time = {}
             self.upload_manager = None
+            return False
+
+    def _check_and_connect_gmail(self):
+        """
+        Check if Gmail credentials exist in ~/.mirix and connect to Gmail MCP if they do.
+        Uses the same logic as the fastapi_server.py handle_gmail_connection function.
+        """
+        from pathlib import Path
+        
+        try:
+            # Check if Gmail credentials exist
+            credentials_file = Path.home() / ".mirix" / "gmail_credentials.json"
+            token_file = Path.home() / ".mirix" / "gmail_token.json"
+            
+            if not credentials_file.exists():
+                self.logger.debug("No Gmail credentials found in ~/.mirix")
+                return False
+                
+            # Load credentials
+            with open(credentials_file, 'r') as f:
+                credentials_data = json.loads(f.read())
+                
+            if 'installed' not in credentials_data:
+                self.logger.warning("Invalid Gmail credentials format")
+                return False
+                
+            client_id = credentials_data['installed'].get('client_id')
+            client_secret = credentials_data['installed'].get('client_secret')
+            
+            if not client_id or not client_secret:
+                self.logger.warning("Missing client_id or client_secret in Gmail credentials")
+                return False
+                
+            self.logger.info("Found Gmail credentials, attempting to connect...")
+            
+            # Import required modules for Gmail connection
+            from google.auth.transport.requests import Request
+            from google.oauth2.credentials import Credentials
+            from googleapiclient.discovery import build
+            
+            # Use all required Gmail scopes for full functionality
+            SCOPES = [
+                'https://www.googleapis.com/auth/gmail.readonly',
+                'https://www.googleapis.com/auth/gmail.send',
+                'https://www.googleapis.com/auth/gmail.modify'
+            ]
+            
+            creds = None
+            
+            # Load existing token if available
+            if token_file.exists():
+                try:
+                    creds = Credentials.from_authorized_user_file(str(token_file), SCOPES)
+                    
+                    # Check if the token has a refresh token
+                    if not hasattr(creds, 'refresh_token') or not creds.refresh_token:
+                        self.logger.info("Gmail token missing refresh_token, removing invalid token file")
+                        token_file.unlink()
+                        creds = None
+                    else:
+                        self.logger.debug("Successfully loaded existing Gmail credentials")
+                        
+                except Exception as e:
+                    self.logger.info(f"Invalid Gmail token file, will need fresh authentication: {e}")
+                    # Remove invalid token file
+                    if token_file.exists():
+                        token_file.unlink()
+                    creds = None
+            
+            # Always register the Gmail MCP client, even if authentication is pending
+            # This allows the tools to be available and authentication can happen on first use
+            try:
+                from ..functions.mcp_client import GmailServerConfig, get_mcp_client_manager, GmailMCPClient
+                
+                server_name = "gmail-native"
+                config = GmailServerConfig(
+                    server_name=server_name,
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    token_file=str(token_file)
+                )
+                
+                # Create Gmail MCP client
+                client = GmailMCPClient(config)
+                
+                # Try to establish connection if credentials are available and valid
+                gmail_service = None
+                if creds and creds.valid:
+                    try:
+                        gmail_service = build('gmail', 'v1', credentials=creds)
+                        client.gmail_service = gmail_service
+                        client.credentials = creds
+                        self.logger.info("✅ Gmail API connection established")
+                    except Exception as e:
+                        self.logger.warning(f"Failed to build Gmail service: {e}")
+                elif creds and creds.expired and creds.refresh_token:
+                    try:
+                        creds.refresh(Request())
+                        gmail_service = build('gmail', 'v1', credentials=creds)
+                        client.gmail_service = gmail_service
+                        client.credentials = creds
+                        # Save refreshed credentials
+                        with open(token_file, 'w') as token:
+                            token.write(creds.to_json())
+                        self.logger.info("✅ Gmail credentials refreshed and API connected")
+                    except Exception as e:
+                        self.logger.warning(f"Failed to refresh Gmail credentials: {e}")
+                
+                # Always mark as initialized - authentication will happen on tool use if needed
+                client.initialized = True
+                
+                # Add to MCP manager
+                mcp_manager = get_mcp_client_manager()
+                mcp_manager.clients[server_name] = client
+                mcp_manager.server_configs[server_name] = config
+                
+                # Save configuration to disk for persistence
+                mcp_manager._save_persistent_connections()
+                
+                # Register tools for this server with the current user
+                try:
+                    from ..services.mcp_tool_registry import get_mcp_tool_registry
+                    mcp_tool_registry = get_mcp_tool_registry()
+                    registered_tools = mcp_tool_registry.register_mcp_tools(self.client.user, [server_name])
+                    
+                    # Add MCP tool to the current chat agent if available
+                    if hasattr(self, 'agent_states') and self.agent_states.agent_state:
+                        self.client.server.agent_manager.add_mcp_tool(
+                            agent_id=self.agent_states.agent_state.id,
+                            mcp_tool_name=server_name,
+                            tool_ids=list(set([tool.id for tool in registered_tools] + 
+                                [tool.id for tool in self.client.server.agent_manager.get_agent_by_id(
+                                    self.agent_states.agent_state.id, actor=self.client.user).tools])),
+                            actor=self.client.user
+                        )
+                        self.logger.info(f"✅ Registered {len(registered_tools)} Gmail tools with chat agent")
+                    
+                except Exception as e:
+                    self.logger.warning(f"Failed to register tools for Gmail server: {e}")
+                
+                auth_status = "with authentication" if gmail_service else "pending authentication"
+                self.logger.info(f"✅ Gmail MCP client '{server_name}' registered {auth_status}")
+                return True
+                
+            except Exception as e:
+                self.logger.warning(f"Failed to register Gmail MCP client: {e}")
+                return False
+                
+        except Exception as e:
+            self.logger.warning(f"Error checking Gmail credentials: {e}")
             return False
 
     def _process_existing_uploaded_files(self):
@@ -1474,8 +1630,10 @@ Please perform this analysis and create new memories as appropriate. Provide a d
                       delete_after_upload=True, 
                       specific_timestamps=None,
                       display_intermediate_message=None,
+                      request_user_confirmation=None,
                       force_absorb_content=False,
-                      async_upload=True):
+                      async_upload=True,
+                      is_screen_monitoring=False):
 
         # Check if Gemini features are required but not available
         if self.model_name in GEMINI_MODELS and not self.is_gemini_client_initialized():
@@ -1610,6 +1768,7 @@ Please perform this analysis and create new memories as appropriate. Provide a d
                 {
                     'message': message,
                     'display_intermediate_message': display_intermediate_message,
+                    'request_user_confirmation': request_user_confirmation,
                     'force_response': True,
                     'existing_file_uris': set(list(self.uri_to_create_time.keys())),
                     'extra_messages': extra_messages,
@@ -1654,6 +1813,10 @@ Please perform this analysis and create new memories as appropriate. Provide a d
             
             # Add conversation to accumulator
             self.temp_message_accumulator.add_user_conversation(message, response_text)
+
+            if not is_screen_monitoring:
+                # we need to call meta memory manager to update the memory
+                self.temp_message_accumulator.absorb_content_into_memory(self.agent_states)
             
             return response_text
 

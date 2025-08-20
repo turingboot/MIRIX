@@ -8,13 +8,139 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, HTTPException, File, UploadFile, Form
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import asyncio
 import queue
 import threading
 from ..agent.agent_wrapper import AgentWrapper
+from ..functions.mcp_client import get_mcp_client_manager, StdioServerConfig
+from ..services.mcp_tool_registry import get_mcp_tool_registry
+from ..services.mcp_marketplace import get_mcp_marketplace
+import logging
+
+logger = logging.getLogger(__name__)
+
+async def handle_gmail_connection(client_id: str, client_secret: str, server_name: str) -> bool:
+    """
+    Handle Gmail OAuth2 authentication and MCP connection
+    Using EXACT same logic as /Users/yu.wang/work/Gmail/single_user_gmail.py
+    """
+    import os
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from googleapiclient.discovery import build
+    
+    # Use all required Gmail scopes for full functionality
+    SCOPES = [
+        'https://www.googleapis.com/auth/gmail.readonly',
+        'https://www.googleapis.com/auth/gmail.send',
+        'https://www.googleapis.com/auth/gmail.modify'
+    ]
+    
+    try:
+        print(f"🔐 Starting Gmail OAuth for {server_name}")
+        
+        # Set up token file path (same pattern as original)
+        token_file = os.path.expanduser("~/.mirix/gmail_token.json")
+        os.makedirs(os.path.dirname(token_file), exist_ok=True)
+        
+        # Create client config - EXACT same structure as original
+        client_config = {
+            "installed": {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                "redirect_uris": [
+                    "http://localhost:8080/",
+                    "http://localhost:8081/",
+                    "http://localhost:8082/"
+                ]
+            }
+        }
+        
+        creds = None
+        
+        # Load existing token if available - EXACT same logic
+        if os.path.exists(token_file):
+            try:
+                creds = Credentials.from_authorized_user_file(token_file, SCOPES)
+            except Exception as e:
+                print(f"🔄 Refreshing Gmail credentials (previous token expired)")
+                os.remove(token_file)
+                creds = None
+        
+        # If there are no (valid) credentials available, let the user log in - EXACT same logic
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                try:
+                    creds.refresh(Request())
+                except Exception as e:
+                    print(f"Error refreshing credentials: {e}")
+                    creds = None
+            
+            if not creds:
+                flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
+                
+                print("\n🔐 Starting OAuth authentication...")
+                print("Opening browser for Google authentication...")
+                
+                # Try specific ports that match redirect URIs - EXACT same logic
+                for port in [8080, 8081, 8082]:
+                    try:
+                        creds = flow.run_local_server(port=port, open_browser=True)
+                        break
+                    except OSError:
+                        if port == 8082:
+                            # If all ports fail, use automatic port selection
+                            creds = flow.run_local_server(port=0, open_browser=True)
+            
+            # Save the credentials for the next run - EXACT same logic
+            with open(token_file, 'w') as token:
+                token.write(creds.to_json())
+        
+        # Build the Gmail service - EXACT same logic
+        service = build('gmail', 'v1', credentials=creds)
+        print("✅ Successfully authenticated with Gmail API")
+        
+        # Gmail service built successfully - ready for email sending
+        print("✅ Gmail API connected successfully")
+        
+        # Now create the MCP client and add it to the manager
+        from ..functions.mcp_client import GmailServerConfig, get_mcp_client_manager, GmailMCPClient
+        
+        config = GmailServerConfig(
+            server_name=server_name,
+            client_id=client_id,
+            client_secret=client_secret,
+            token_file=token_file
+        )
+        
+        # Create Gmail MCP client directly
+        client = GmailMCPClient(config)
+        client.gmail_service = service
+        client.credentials = creds
+        client.initialized = True
+        
+        # Add to MCP manager
+        mcp_manager = get_mcp_client_manager()
+        mcp_manager.clients[server_name] = client
+        mcp_manager.server_configs[server_name] = config
+        
+        # Save configuration to disk for persistence (this was missing!)
+        mcp_manager._save_persistent_connections()
+        
+        print(f"✅ Gmail MCP client added to manager as '{server_name}' and saved to disk")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error in Gmail OAuth flow: {str(e)}")
+        logger.error(f"Gmail connection error: {str(e)}")
+        return False
 
 """
 VOICE RECORDING STRATEGY & ARCHITECTURE:
@@ -65,8 +191,77 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def register_mcp_tools_for_restored_connections():
+    """Register tools for MCP connections that were restored on startup"""
+    try:
+        mcp_manager = get_mcp_client_manager()
+        connected_servers = mcp_manager.list_servers()
+        
+        if connected_servers and agent and agent.client.user:
+            logger.info(f"Re-registering tools for {len(connected_servers)} restored MCP servers")
+            
+            mcp_tool_registry = get_mcp_tool_registry()
+            current_user = agent.client.user
+            
+            for server_name in connected_servers:
+                try:
+                    # Register tools for this server
+                    registered_tools = mcp_tool_registry.register_mcp_tools(current_user, [server_name])
+                    
+                    # Add MCP tool to the current chat agent if available
+                    if hasattr(agent, 'agent_states'):
+                        agent.client.server.agent_manager.add_mcp_tool(
+                            agent_id=agent.agent_states.agent_state.id,
+                            mcp_tool_name=server_name,
+                            tool_ids=list(set([tool.id for tool in registered_tools] + 
+                                [tool.id for tool in agent.client.server.agent_manager.get_agent_by_id(
+                                    agent.agent_states.agent_state.id, actor=agent.client.user).tools])),
+                            actor=agent.client.user
+                        )
+                    
+                    logger.info(f"Re-registered {len(registered_tools)} tools for server {server_name}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to re-register tools for server {server_name}: {str(e)}")
+                    
+    except Exception as e:
+        logger.error(f"Error re-registering MCP tools: {str(e)}")
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize and restore MCP connections on startup"""
+    try:
+        logger.info("Starting up Mirix FastAPI server...")
+        
+        # Initialize the MCP client manager (this will auto-restore connections)
+        print("🚀 Initializing MCP client manager...")
+        mcp_manager = get_mcp_client_manager()
+        connected_servers = mcp_manager.list_servers()
+        logger.info(f"MCP client manager initialized with {len(connected_servers)} restored connections: {connected_servers}")
+        print(f"🔄 MCP Manager: Restored {len(connected_servers)} connections: {connected_servers}")
+        
+        # Debug: Check if the configuration file exists
+        import os
+        config_file = os.path.expanduser("~/.mirix/mcp_connections.json")
+        if os.path.exists(config_file):
+            with open(config_file, 'r') as f:
+                import json
+                configs = json.load(f)
+                print(f"📋 Found MCP config file with {len(configs)} entries: {list(configs.keys())}")
+        else:
+            print(f"📋 No MCP config file found at {config_file}")
+        
+        # Tool registration will happen later when agent is available
+        
+    except Exception as e:
+        logger.error(f"Error during startup: {str(e)}")
+
 # Global agent instance
 agent = None
+# Global storage for confirmation queues keyed by confirmation_id
+confirmation_queues = {}
+# Flag to track if MCP tools have been registered for restored connections
+_mcp_tools_registered = False
 
 class MessageRequest(BaseModel):
     message: Optional[str] = None
@@ -79,6 +274,10 @@ class MessageRequest(BaseModel):
 class MessageResponse(BaseModel):
     response: str
     status: str = "success"
+
+class ConfirmationRequest(BaseModel):
+    confirmation_id: str
+    confirmed: bool
 
 class PersonaDetailsResponse(BaseModel):
     personas: Dict[str, str]
@@ -284,6 +483,12 @@ async def send_message_endpoint(request: MessageRequest):
     if agent is None:
         raise HTTPException(status_code=500, detail="Agent not initialized")
     
+    # Register tools for restored MCP connections (one-time only)
+    global _mcp_tools_registered
+    if not _mcp_tools_registered:
+        register_mcp_tools_for_restored_connections()
+        _mcp_tools_registered = True
+    
     # Check for missing API keys
     api_key_check = check_missing_api_keys(agent)
     if "error" in api_key_check:
@@ -339,11 +544,17 @@ async def send_streaming_message_endpoint(request: MessageRequest):
     if agent is None:
         raise HTTPException(status_code=500, detail="Agent not initialized")
     
+    # Register tools for restored MCP connections (one-time only)
+    global _mcp_tools_registered
+    if not _mcp_tools_registered:
+        register_mcp_tools_for_restored_connections()
+        _mcp_tools_registered = True
+    
     # Check for missing API keys
     api_key_check = check_missing_api_keys(agent)
     if "error" in api_key_check:
         raise HTTPException(status_code=500, detail=api_key_check["error"][0])
-    
+
     if api_key_check["missing_keys"]:
         # Return a special SSE event for missing API keys
         async def missing_keys_response():
@@ -372,6 +583,34 @@ async def send_streaming_message_endpoint(request: MessageRequest):
             "content": message
         })
     
+    def request_user_confirmation(confirmation_type: str, details: dict) -> bool:
+        """Request confirmation from user and wait for response"""
+        import uuid
+        confirmation_id = str(uuid.uuid4())
+        
+        # Create a queue for this specific confirmation
+        confirmation_result_queue = queue.Queue()
+        confirmation_queues[confirmation_id] = confirmation_result_queue
+        
+        # Put confirmation request in message queue
+        message_queue.put({
+            "type": "confirmation_request",
+            "confirmation_type": confirmation_type,
+            "confirmation_id": confirmation_id,
+            "details": details
+        })
+        
+        # Wait for confirmation response with timeout
+        try:
+            result = confirmation_result_queue.get(timeout=300)  # 5 minute timeout
+            return result.get("confirmed", False)
+        except queue.Empty:
+            # Timeout - default to not confirmed
+            return False
+        finally:
+            # Clean up the queue
+            confirmation_queues.pop(confirmation_id, None)
+    
     async def generate_stream():
         """Generator function for streaming responses"""
         try:
@@ -391,7 +630,9 @@ async def send_streaming_message_endpoint(request: MessageRequest):
                             sources=request.sources,  # Pass sources to agent
                             voice_files=request.voice_files,  # Pass raw voice files
                             memorizing=request.memorizing,
-                            display_intermediate_message=display_intermediate_message
+                            display_intermediate_message=display_intermediate_message,
+                            request_user_confirmation=request_user_confirmation,
+                            is_screen_monitoring=request.is_screen_monitoring
                         )
                     )
                     # Handle various response cases
@@ -1251,6 +1492,242 @@ async def trigger_reflexion(request: ReflexionRequest):
         print(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Reflexion process failed: {str(e)}")
 
+# MCP Marketplace endpoints
+@app.get("/mcp/marketplace")
+async def get_marketplace():
+    """Get available MCP servers from marketplace"""
+    marketplace = get_mcp_marketplace()
+    servers = marketplace.get_all_servers()
+    categories = marketplace.get_categories()
+    
+    # Check connection status
+    mcp_manager = get_mcp_client_manager()
+    connected_servers = mcp_manager.list_servers()
+    
+    # Debug logging
+    logger.debug(f"MCP Marketplace: {len(connected_servers)} connected servers: {connected_servers}")
+    
+    server_data = []
+    for server in servers:
+        server_dict = server.to_dict()
+        server_dict['is_connected'] = server.id in connected_servers
+        server_data.append(server_dict)
+    
+    return {
+        "servers": server_data,
+        "categories": categories
+    }
+
+@app.get("/mcp/status")
+async def get_mcp_status():
+    """Get current MCP connection status"""
+    try:
+        mcp_manager = get_mcp_client_manager()
+        connected_servers = mcp_manager.list_servers()
+        
+        # Get detailed status for each connected server
+        server_status = {}
+        for server_name in connected_servers:
+            try:
+                # Try to get server info to verify it's actually working
+                info = mcp_manager.get_server_info(server_name)
+                server_status[server_name] = {
+                    "connected": True,
+                    "status": "active",
+                    "info": info
+                }
+            except Exception as e:
+                server_status[server_name] = {
+                    "connected": False,
+                    "status": "error",
+                    "error": str(e)
+                }
+        
+        return {
+            "connected_servers": connected_servers,
+            "server_count": len(connected_servers),
+            "server_status": server_status
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting MCP status: {str(e)}")
+        return {
+            "connected_servers": [],
+            "server_count": 0,
+            "server_status": {},
+            "error": str(e)
+        }
+    
+@app.get("/mcp/marketplace/search")
+async def search_mcp_marketplace(query: str = ""):
+    """Search MCP marketplace"""
+    try:
+        marketplace = get_mcp_marketplace()
+        
+        if query.strip():
+            results = marketplace.search(query)
+        else:
+            results = marketplace.get_all_servers()
+        
+        # Check connection status
+        mcp_manager = get_mcp_client_manager()
+        connected_servers = mcp_manager.list_servers()
+        
+        result_data = []
+        for server in results:
+            server_dict = server.to_dict()
+            server_dict['is_connected'] = server.id in connected_servers
+            result_data.append(server_dict)
+        
+        return {"results": result_data}
+        
+    except Exception as e:
+        logger.error(f"Error searching MCP marketplace: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to search MCP marketplace: {str(e)}")
+
+@app.post("/mcp/marketplace/connect")
+async def connect_mcp_server(request: dict):
+    """Connect to an MCP server"""
+    try:
+        server_id = request.get("server_id")
+        env_vars = request.get("env_vars", {})
+        
+        if not server_id:
+            raise HTTPException(status_code=400, detail="server_id is required")
+        
+        marketplace = get_mcp_marketplace()
+        server_listing = marketplace.get_server(server_id)
+        
+        if not server_listing:
+            raise HTTPException(status_code=404, detail=f"Server {server_id} not found in marketplace")
+        
+        mcp_manager = get_mcp_client_manager()
+        
+        # Special handling for Gmail - handle OAuth flow directly in backend
+        if server_id == "gmail-native":
+            client_id = env_vars.get("client_id")
+            client_secret = env_vars.get("client_secret")
+            
+            if not client_id or not client_secret:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="client_id and client_secret are required for Gmail integration"
+                )
+            
+            # Handle Gmail OAuth and MCP connection directly
+            success = await handle_gmail_connection(client_id, client_secret, server_listing.id)
+            
+        else:
+            # Create stdio config for other servers
+            config = StdioServerConfig(
+                server_name=server_listing.id,
+                command=server_listing.command,
+                args=server_listing.args,
+                env={**(server_listing.env or {}), **env_vars}
+            )
+            success = mcp_manager.add_server(config, env_vars)
+        
+        if success:
+            # Register tools for this server
+            mcp_tool_registry = get_mcp_tool_registry()
+            # Get current user (using agent's user for now)
+            if agent and agent.client.user:
+                current_user = agent.client.user
+                registered_tools = mcp_tool_registry.register_mcp_tools(current_user, [server_listing.id])
+                tools_count = len(registered_tools)
+            else:
+                tools_count = 0
+            
+            # Add MCP tool to the current chat agent if available
+            if agent and agent.client.user and hasattr(agent, 'agent_states'):
+                # Update the agent's MCP tools list
+                agent.client.server.agent_manager.add_mcp_tool(
+                    agent_id=agent.agent_states.agent_state.id,
+                    mcp_tool_name=server_listing.id,
+                    tool_ids=list(set([tool.id for tool in registered_tools] + 
+                        [tool.id for tool in agent.client.server.agent_manager.get_agent_by_id(agent.agent_states.agent_state.id, 
+                        actor=agent.client.user).tools])),
+                    actor=agent.client.user
+                )
+
+                print(f"✅ Added MCP tool '{server_listing.id}' to agent '{agent.agent_states.agent_state.name}'")
+                
+            return {
+                "success": True,
+                "server_name": server_listing.name,
+                "tools_count": tools_count,
+                "message": f"Successfully connected to {server_listing.name}"
+            }
+        else:
+            return {
+                "success": False,
+                "error": f"Failed to connect to {server_listing.name}"
+            }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error connecting MCP server: {str(e)}")
+        return {
+            "success": False,
+            "error": f"Connection failed: {str(e)}"
+        }
+
+@app.post("/mcp/marketplace/disconnect")
+async def disconnect_mcp_server(request: dict):
+    """Disconnect from an MCP server"""
+
+    server_id = request.get("server_id")
+    
+    if not server_id:
+        raise HTTPException(status_code=400, detail="server_id is required")
+    
+    mcp_manager = get_mcp_client_manager()
+    success = mcp_manager.remove_server(server_id)
+    
+    if success:
+        # Unregister tools for this server and get the list of unregistered tool IDs
+        mcp_tool_registry = get_mcp_tool_registry()
+        if agent and agent.client.user:
+            current_user = agent.client.user
+            unregistered_tool_ids = mcp_tool_registry.unregister_mcp_tools(current_user, server_id)
+            logger.info(f"Unregistered {len(unregistered_tool_ids)} tools for server {server_id}")
+            
+            # Remove MCP tool from the current chat agent if available
+            if hasattr(agent, 'agent_states'):
+                # Get current agent state
+                current_agent = agent.client.server.agent_manager.get_agent_by_id(
+                    agent.agent_states.agent_state.id, 
+                    actor=agent.client.user
+                )
+                
+                # Remove the specific MCP server from the mcp_tools list
+                updated_mcp_tools = [tool for tool in (current_agent.mcp_tools or []) if tool != server_id]
+                
+                # Remove only the tools that belonged to this MCP server
+                current_tool_ids = [tool.id for tool in current_agent.tools]
+                updated_tool_ids = [tool_id for tool_id in current_tool_ids if tool_id not in unregistered_tool_ids]
+                
+                # Update the agent with the filtered lists
+                agent.client.server.agent_manager.update_mcp_tools(
+                    agent_id=agent.agent_states.agent_state.id,
+                    mcp_tools=updated_mcp_tools,
+                    tool_ids=updated_tool_ids,
+                    actor=agent.client.user
+                )
+                print(f"✅ Removed MCP tool '{server_id}' and {len(unregistered_tool_ids)} associated tools from agent '{agent.agent_states.agent_state.name}'")
+        
+        return {
+            "success": True,
+            "message": f"Successfully disconnected from {server_id}"
+        }
+    else:
+        return {
+            "success": False,
+            "error": f"Failed to disconnect from {server_id}"
+        }
+    
+
 def _run_reflexion_process(agent):
     """
     Run the reflexion process - this is the blocking function that runs in a separate thread.
@@ -1272,6 +1749,22 @@ def _run_reflexion_process(agent):
             'success': False,
             'message': f'Reflexion process failed: {str(e)}'
         }
+
+@app.post("/confirmation/respond")
+async def respond_to_confirmation(request: ConfirmationRequest):
+    """Handle user confirmation response"""
+    confirmation_id = request.confirmation_id
+    confirmed = request.confirmed
+    
+    # Find the confirmation queue for this ID
+    confirmation_queue = confirmation_queues.get(confirmation_id)
+    
+    if confirmation_queue:
+        # Send the confirmation result to the waiting thread
+        confirmation_queue.put({"confirmed": confirmed})
+        return {"success": True, "message": "Confirmation received"}
+    else:
+        return {"success": False, "message": "Confirmation ID not found or expired"}
 
 if __name__ == "__main__":
     import uvicorn

@@ -943,7 +943,7 @@ def test_all_memories():
     print("Starting comprehensive memory system tests...\n")
     
     # Initialize the agent with config file
-    agent = AgentWrapper("configs/mirix_monitor.yaml")
+    agent = AgentWrapper("mirix/configs/mirix_monitor.yaml")
     
     # agent.save_agent("./tmp/temp_agent")
 

@@ -573,4 +573,747 @@
   .api-key-update-btn:hover:not(:disabled) {
     background: linear-gradient(135deg, #047857, #059669);
   }
+}
+
+/* MCP Marketplace Styles */
+.mcp-marketplace {
+  background-color: #ffffff !important;
+  background: #ffffff !important;
+  border-radius: 8px;
+  padding: 20px;
+  border: 1px solid #e9ecef !important;
+  color: #212529 !important;
+}
+
+.mcp-controls {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.mcp-search {
+  flex: 1;
+  min-width: 200px;
+}
+
+.mcp-search-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  font-size: 14px;
+  background-color: #ffffff;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.mcp-search-input:focus {
+  outline: none;
+  border-color: #007acc;
+  box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.1);
+}
+
+.mcp-filter {
+  min-width: 120px;
+}
+
+.mcp-category-select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  font-size: 14px;
+  background-color: #ffffff;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.mcp-category-select:focus {
+  outline: none;
+  border-color: #007acc;
+  box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.1);
+}
+
+.mcp-message {
+  padding: 12px 16px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.mcp-message.success {
+  background-color: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.mcp-message.error {
+  background-color: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.mcp-message.info {
+  background-color: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+}
+
+.mcp-loading {
+  text-align: center;
+  padding: 20px;
+  color: #6c757d;
+  font-style: italic;
+}
+
+.mcp-servers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.mcp-server-item {
+  background-color: #ffffff;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  padding: 16px;
+  transition: all 0.2s ease;
+}
+
+.mcp-server-item:hover {
+  border-color: #007acc;
+  box-shadow: 0 2px 8px rgba(0, 122, 204, 0.1);
+}
+
+.mcp-server-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+  gap: 16px;
+}
+
+.mcp-server-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.mcp-server-name {
+  margin: 0 0 4px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.mcp-server-category {
+  display: inline-block;
+  background-color: #007acc;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-right: 8px;
+}
+
+.mcp-connected-badge {
+  display: inline-block;
+  background-color: #28a745;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.mcp-server-actions {
+  flex-shrink: 0;
+}
+
+.mcp-connect-btn,
+.mcp-disconnect-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mcp-connect-btn {
+  background-color: #28a745;
+  color: white;
+}
+
+.mcp-connect-btn:hover:not(:disabled) {
+  background-color: #218838;
+  transform: translateY(-1px);
+}
+
+.mcp-disconnect-btn {
+  background-color: #dc3545;
+  color: white;
+}
+
+.mcp-disconnect-btn:hover:not(:disabled) {
+  background-color: #c82333;
+  transform: translateY(-1px);
+}
+
+.mcp-connect-btn:disabled,
+.mcp-disconnect-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.mcp-server-description {
+  margin: 0 0 12px 0;
+  color: #6c757d;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.mcp-server-details {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.mcp-author {
+  color: #495057;
+  font-weight: 500;
+}
+
+.mcp-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.mcp-tag {
+  background-color: #e9ecef;
+  color: #495057;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.mcp-requirements {
+  color: #6c757d;
+  font-size: 11px;
+}
+
+.mcp-github-link {
+  color: #007acc;
+  text-decoration: none;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mcp-github-link:hover {
+  color: #0056b3;
+  text-decoration: underline;
+}
+
+.mcp-no-results {
+  text-align: center;
+  padding: 40px 20px;
+  color: #6c757d;
+  font-style: italic;
+}
+
+/* Force light theme for MCP marketplace in dark mode */
+@media (prefers-color-scheme: dark) {
+  .mcp-marketplace {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    border-color: #e9ecef !important;
+    color: #212529 !important;
+  }
+  
+  .mcp-marketplace .mcp-search-input,
+  .mcp-marketplace .mcp-category-select {
+    background-color: #ffffff !important;
+    border-color: #ced4da !important;
+    color: #495057 !important;
+  }
+  
+  .mcp-marketplace .mcp-search-input:focus,
+  .mcp-marketplace .mcp-category-select:focus {
+    border-color: #007acc !important;
+    box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.1) !important;
+  }
+  
+  .mcp-marketplace .mcp-server-item {
+    background-color: #ffffff !important;
+    border-color: #e9ecef !important;
+  }
+  
+  .mcp-marketplace .mcp-server-item:hover {
+    border-color: #007acc !important;
+    box-shadow: 0 2px 8px rgba(0, 122, 204, 0.1) !important;
+  }
+  
+  .mcp-marketplace .mcp-server-name {
+    color: #2c3e50 !important;
+  }
+  
+  .mcp-marketplace .mcp-server-description {
+    color: #6c757d !important;
+  }
+  
+  .mcp-marketplace .mcp-author {
+    color: #495057 !important;
+  }
+  
+  .mcp-marketplace .mcp-tag {
+    background-color: #e9ecef !important;
+    color: #495057 !important;
+  }
+  
+  .mcp-marketplace .mcp-requirements {
+    color: #6c757d !important;
+  }
+  
+  .mcp-marketplace .mcp-github-link {
+    color: #007acc !important;
+  }
+  
+  .mcp-marketplace .mcp-github-link:hover {
+    color: #0056b3 !important;
+  }
+  
+  .mcp-marketplace .mcp-no-results,
+  .mcp-marketplace .mcp-loading {
+    color: #6c757d !important;
+  }
+}
+
+/* Section header with action button */
+.section-header-with-action {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.section-header-with-action h3 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #495057;
+  border-bottom: 2px solid #007acc;
+  padding-bottom: 8px;
+}
+
+.section-header-with-action p {
+  margin: 8px 0 0 0;
+  color: #6c757d;
+  font-size: 14px;
+}
+
+.refresh-mcp-btn {
+  background-color: #007acc;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  margin-left: 16px;
+  margin-top: -4px;
+}
+
+.refresh-mcp-btn:hover:not(:disabled) {
+  background-color: #0056b3;
+  transform: translateY(-1px);
+}
+
+.refresh-mcp-btn:active {
+  transform: translateY(0);
+}
+
+.refresh-mcp-btn:disabled {
+  background-color: #6c757d;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* MCP message styles for dark mode */
+@media (prefers-color-scheme: dark) {
+  .mcp-marketplace .mcp-message.success {
+    background-color: #ecfdf5 !important;
+    color: #065f46 !important;
+    border-color: #a7f3d0 !important;
+  }
+  
+  .mcp-marketplace .mcp-message.error {
+    background-color: #fef2f2 !important;
+    color: #991b1b !important;
+    border-color: #fecaca !important;
+  }
+  
+  .mcp-marketplace .mcp-message.info {
+    background-color: #eff6ff !important;
+    color: #1e40af !important;
+    border-color: #93c5fd !important;
+  }
+}
+
+/* Responsive design for MCP */
+@media (max-width: 768px) {
+  .mcp-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .mcp-search {
+    min-width: auto;
+  }
+  
+  .mcp-filter {
+    min-width: auto;
+  }
+  
+  .mcp-server-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  
+  .mcp-server-actions {
+    align-self: stretch;
+  }
+  
+  .mcp-connect-btn,
+  .mcp-disconnect-btn {
+    width: 100%;
+  }
+  
+  .mcp-server-details {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}
+
+/* Gmail Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background-color: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  max-width: 600px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  position: relative;
+}
+
+.gmail-modal {
+  max-width: 550px;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px 16px 24px;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.modal-close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #6c757d;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: background-color 0.2s ease;
+}
+
+.modal-close-btn:hover {
+  background-color: #f8f9fa;
+  color: #495057;
+}
+
+.modal-body {
+  padding: 24px;
+}
+
+.gmail-modal-description {
+  margin: 0 0 20px 0;
+  color: #495057;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.gmail-setup-steps {
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+
+.gmail-setup-steps ol {
+  margin: 0;
+  padding-left: 20px;
+  color: #495057;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.gmail-setup-steps li {
+  margin-bottom: 8px;
+}
+
+.gmail-setup-steps li:last-child {
+  margin-bottom: 0;
+}
+
+.gmail-setup-steps a {
+  color: #007acc;
+  text-decoration: none;
+}
+
+.gmail-setup-steps a:hover {
+  text-decoration: underline;
+}
+
+.gmail-setup-steps code {
+  background-color: #e9ecef;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+}
+
+.gmail-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-group label {
+  font-weight: 500;
+  color: #495057;
+  font-size: 14px;
+}
+
+.gmail-input {
+  width: 100%;
+  padding: 12px;
+  border: 2px solid #e1e5e9;
+  border-radius: 8px;
+  font-size: 14px;
+  background-color: #ffffff !important;
+  color: #1a1a1a !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  box-sizing: border-box;
+  caret-color: #007acc;
+  line-height: 1.4;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  -webkit-text-fill-color: #1a1a1a !important;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+}
+
+.gmail-input:-webkit-autofill,
+.gmail-input:-webkit-autofill:hover,
+.gmail-input:-webkit-autofill:focus {
+  background-color: #ffffff !important;
+  -webkit-text-fill-color: #1a1a1a !important;
+  box-shadow: 0 0 0px 1000px #ffffff inset !important;
+}
+
+.gmail-input:focus {
+  outline: none;
+  border-color: #007acc;
+  box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.1);
+  caret-color: #007acc;
+}
+
+.gmail-input::placeholder {
+  color: #6c757d;
+  font-style: italic;
+  opacity: 0.8;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 24px 24px 24px;
+  border-top: 1px solid #e9ecef;
+}
+
+.modal-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 100px;
+}
+
+.modal-btn.secondary {
+  background-color: #6c757d;
+  color: white;
+}
+
+.modal-btn.secondary:hover:not(:disabled) {
+  background-color: #5a6268;
+  transform: translateY(-1px);
+}
+
+.modal-btn.primary {
+  background-color: #007acc;
+  color: white;
+}
+
+.modal-btn.primary:hover:not(:disabled) {
+  background-color: #0056a3;
+  transform: translateY(-1px);
+}
+
+.modal-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* Dark mode support for Gmail modal */
+@media (prefers-color-scheme: dark) {
+  .modal-content {
+    background-color: #1f2937;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  }
+  
+  .modal-header {
+    border-bottom-color: #4b5563;
+  }
+  
+  .modal-header h3 {
+    color: #f9fafb;
+  }
+  
+  .modal-close-btn {
+    color: #9ca3af;
+  }
+  
+  .modal-close-btn:hover {
+    background-color: #374151;
+    color: #d1d5db;
+  }
+  
+  .gmail-modal-description {
+    color: #d1d5db;
+  }
+  
+  .gmail-setup-steps {
+    background-color: #374151;
+  }
+  
+  .gmail-setup-steps ol {
+    color: #d1d5db;
+  }
+  
+  .gmail-setup-steps a {
+    color: #60a5fa;
+  }
+  
+  .gmail-setup-steps code {
+    background-color: #4b5563;
+    color: #f9fafb;
+  }
+  
+  .form-group label {
+    color: #d1d5db;
+  }
+  
+  .gmail-input {
+    background-color: #374151 !important;
+    border-color: #4b5563;
+    color: #ffffff !important;
+    caret-color: #60a5fa;
+    -webkit-text-fill-color: #ffffff !important;
+  }
+  
+  .gmail-input:focus {
+    border-color: #007acc;
+    box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.2);
+    caret-color: #60a5fa;
+  }
+  
+  .gmail-input::placeholder {
+    color: #9ca3af;
+    opacity: 0.7;
+  }
+  
+  .modal-footer {
+    border-top-color: #4b5563;
+  }
+  
+  .modal-btn.secondary {
+    background-color: #4b5563;
+  }
+  
+  .modal-btn.secondary:hover:not(:disabled) {
+    background-color: #374151;
+  }
+
+  .gmail-input:-webkit-autofill,
+  .gmail-input:-webkit-autofill:hover,
+  .gmail-input:-webkit-autofill:focus {
+    background-color: #374151 !important;
+    -webkit-text-fill-color: #ffffff !important;
+    box-shadow: 0 0 0px 1000px #374151 inset !important;
+  }
 } 

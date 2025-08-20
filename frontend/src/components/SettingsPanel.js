@@ -23,6 +23,14 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
   const [selectedTemplateInEdit, setSelectedTemplateInEdit] = useState('');
   const [showLocalModelModal, setShowLocalModelModal] = useState(false);
   const [customModels, setCustomModels] = useState([]);
+  const [mcpMarketplace, setMcpMarketplace] = useState({ servers: [], categories: [] });
+  const [mcpSearchQuery, setMcpSearchQuery] = useState('');
+  const [mcpSearchResults, setMcpSearchResults] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [isLoadingMcp, setIsLoadingMcp] = useState(false);
+  const [mcpMessage, setMcpMessage] = useState('');
+  const [showGmailModal, setShowGmailModal] = useState(false);
+  const [gmailCredentials, setGmailCredentials] = useState({ clientId: '', clientSecret: '' });
 
   // Debug logging for settings
   useEffect(() => {
@@ -47,7 +55,10 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
       const response = await queuedFetch(`${settings.serverUrl}/personas`);
       if (response.ok) {
         const data = await response.json();
-        setPersonaDetails(data.personas);
+        setPersonaDetails(prevDetails => {
+          const hasChanged = JSON.stringify(prevDetails) !== JSON.stringify(data.personas);
+          return hasChanged ? data.personas : prevDetails;
+        });
       } else {
         console.error('Failed to fetch persona details');
       }
@@ -65,7 +76,9 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
       const response = await queuedFetch(`${settings.serverUrl}/personas/core_memory`);
       if (response.ok) {
         const data = await response.json();
-        setSelectedPersonaText(data.text);
+        setSelectedPersonaText(prevText => {
+          return prevText !== data.text ? data.text : prevText;
+        });
       } else {
         console.error('Failed to fetch core memory persona');
       }
@@ -146,7 +159,11 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
       const response = await queuedFetch(`${settings.serverUrl}/models/custom/list`);
       if (response.ok) {
         const data = await response.json();
-        setCustomModels(data.models || []);
+        setCustomModels(prevModels => {
+          const newModels = data.models || [];
+          const hasChanged = JSON.stringify(prevModels) !== JSON.stringify(newModels);
+          return hasChanged ? newModels : prevModels;
+        });
       } else {
         console.error('Failed to fetch custom models');
       }
@@ -154,6 +171,242 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
       console.error('Error fetching custom models:', error);
     }
   }, [settings.serverUrl]);
+
+  const fetchMcpMarketplace = useCallback(async () => {
+    if (!settings.serverUrl) {
+      console.log('fetchMcpMarketplace: serverUrl not available yet');
+      return;
+    }
+    try {
+      setIsLoadingMcp(true);
+      console.log('Fetching MCP marketplace data...');
+      const response = await queuedFetch(`${settings.serverUrl}/mcp/marketplace`);
+      if (response.ok) {
+        const data = await response.json();
+        console.log('MCP marketplace data:', data);
+        
+        const newMarketplace = { 
+          servers: data.servers || [], 
+          categories: ['All', ...(data.categories || [])] 
+        };
+        
+        // Only update state if data has actually changed
+        setMcpMarketplace(prevMarketplace => {
+          const hasChanged = JSON.stringify(prevMarketplace) !== JSON.stringify(newMarketplace);
+          return hasChanged ? newMarketplace : prevMarketplace;
+        });
+        
+        setMcpSearchResults(prevResults => {
+          const newResults = data.servers || [];
+          const hasChanged = JSON.stringify(prevResults) !== JSON.stringify(newResults);
+          return hasChanged ? newResults : prevResults;
+        });
+        
+        // Log connection status
+        const connectedServers = data.servers?.filter(s => s.is_connected) || [];
+        console.log(`Found ${connectedServers.length} connected MCP servers:`, connectedServers.map(s => s.id));
+      } else {
+        console.error('Failed to fetch MCP marketplace');
+        setMcpMessage('❌ Failed to load MCP marketplace');
+      }
+    } catch (error) {
+      console.error('Error fetching MCP marketplace:', error);
+      setMcpMessage('❌ Error loading MCP marketplace');
+    } finally {
+      setIsLoadingMcp(false);
+    }
+  }, [settings.serverUrl]);
+
+  const searchMcpMarketplace = useCallback(async (query = '') => {
+    if (!settings.serverUrl) {
+      return;
+    }
+    try {
+      setIsLoadingMcp(true);
+      let url = `${settings.serverUrl}/mcp/marketplace`;
+      if (query.trim()) {
+        url += `/search?query=${encodeURIComponent(query)}`;
+      }
+      
+      const response = await queuedFetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        const results = query.trim() ? (data.results || []) : (data.servers || []);
+        
+        // Filter by category if not 'All'
+        const filteredResults = selectedCategory === 'All' 
+          ? results 
+          : results.filter(server => server.category === selectedCategory);
+          
+        setMcpSearchResults(filteredResults);
+      }
+    } catch (error) {
+      console.error('Error searching MCP marketplace:', error);
+    } finally {
+      setIsLoadingMcp(false);
+    }
+  }, [settings.serverUrl, selectedCategory]);
+
+  const refreshMcpStatus = useCallback(async () => {
+    if (!settings.serverUrl) {
+      return;
+    }
+    try {
+      console.log('Refreshing MCP connection status...');
+      const response = await queuedFetch(`${settings.serverUrl}/mcp/status`);
+      if (response.ok) {
+        const data = await response.json();
+        console.log('MCP status:', data);
+        
+        // Check if we have any connected servers
+        if (data.connected_servers && data.connected_servers.length > 0) {
+          console.log(`Found ${data.connected_servers.length} connected MCP servers:`, data.connected_servers);
+        }
+        
+        // Refresh the marketplace to get updated connection status
+        await fetchMcpMarketplace();
+        await searchMcpMarketplace(mcpSearchQuery);
+      }
+    } catch (error) {
+      console.error('Error refreshing MCP status:', error);
+    }
+  }, [settings.serverUrl, fetchMcpMarketplace, searchMcpMarketplace, mcpSearchQuery]);
+
+  const connectMcpServer = useCallback(async (serverId, envVars = {}) => {
+    if (!settings.serverUrl) {
+      return;
+    }
+    
+    // Special handling for Gmail - show modal for credentials
+    if (serverId === 'gmail-native') {
+      setShowGmailModal(true);
+      return; // Exit here, actual connection happens in handleGmailConnect
+    }
+    
+    try {
+      setIsLoadingMcp(true);
+      setMcpMessage(`Connecting to ${serverId}...`);
+      
+      const response = await queuedFetch(`${settings.serverUrl}/mcp/marketplace/connect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ server_id: serverId, env_vars: envVars })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setMcpMessage(`✅ Connected to ${data.server_name}! Found ${data.tools_count} tools.`);
+          // Refresh the marketplace to update connection status
+          await fetchMcpMarketplace();
+          await searchMcpMarketplace(mcpSearchQuery);
+        } else {
+          setMcpMessage(`❌ ${data.error}`);
+        }
+      } else {
+        setMcpMessage('❌ Failed to connect to server');
+      }
+    } catch (error) {
+      console.error('Error connecting MCP server:', error);
+      setMcpMessage('❌ Connection error');
+    } finally {
+      setIsLoadingMcp(false);
+      setTimeout(() => setMcpMessage(''), 5000);
+    }
+  }, [settings.serverUrl, fetchMcpMarketplace, searchMcpMarketplace, mcpSearchQuery]);
+
+  const handleGmailConnect = useCallback(async () => {
+    const { clientId, clientSecret } = gmailCredentials;
+    
+    if (!clientId.trim()) {
+      setMcpMessage('❌ Gmail Client ID is required');
+      return;
+    }
+    
+    if (!clientSecret.trim()) {
+      setMcpMessage('❌ Gmail Client Secret is required');
+      return;
+    }
+    
+    setShowGmailModal(false);
+    setMcpMessage('🔐 Connecting to Gmail... This will open a browser window for OAuth authorization.');
+    
+    const envVars = { client_id: clientId.trim(), client_secret: clientSecret.trim() };
+    
+    try {
+      setIsLoadingMcp(true);
+      setMcpMessage('Connecting to Gmail...');
+      
+      const response = await queuedFetch(`${settings.serverUrl}/mcp/marketplace/connect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ server_id: 'gmail-native', env_vars: envVars })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setMcpMessage(`✅ Connected to ${data.server_name}! Found ${data.tools_count} tools.`);
+          // Clear credentials for security
+          setGmailCredentials({ clientId: '', clientSecret: '' });
+          // Refresh the marketplace to update connection status
+          await fetchMcpMarketplace();
+          await searchMcpMarketplace(mcpSearchQuery);
+        } else {
+          setMcpMessage(`❌ ${data.error}`);
+        }
+      } else {
+        setMcpMessage('❌ Failed to connect to Gmail server');
+      }
+    } catch (error) {
+      console.error('Error connecting Gmail server:', error);
+      setMcpMessage('❌ Gmail connection error');
+    } finally {
+      setIsLoadingMcp(false);
+      setTimeout(() => setMcpMessage(''), 5000);
+    }
+  }, [gmailCredentials, settings.serverUrl, fetchMcpMarketplace, searchMcpMarketplace, mcpSearchQuery]);
+
+  const handleGmailModalClose = useCallback(() => {
+    setShowGmailModal(false);
+    setGmailCredentials({ clientId: '', clientSecret: '' });
+  }, []);
+
+  const disconnectMcpServer = useCallback(async (serverId) => {
+    if (!settings.serverUrl) {
+      return;
+    }
+    try {
+      setIsLoadingMcp(true);
+      setMcpMessage(`Disconnecting from ${serverId}...`);
+      
+      const response = await queuedFetch(`${settings.serverUrl}/mcp/marketplace/disconnect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ server_id: serverId })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setMcpMessage(`✅ Disconnected from ${serverId}`);
+          // Refresh the marketplace to update connection status
+          await fetchMcpMarketplace();
+          await searchMcpMarketplace(mcpSearchQuery);
+        } else {
+          setMcpMessage(`❌ ${data.error}`);
+        }
+      } else {
+        setMcpMessage('❌ Failed to disconnect from server');
+      }
+    } catch (error) {
+      console.error('Error disconnecting MCP server:', error);
+      setMcpMessage('❌ Disconnection error');
+    } finally {
+      setIsLoadingMcp(false);
+      setTimeout(() => setMcpMessage(''), 5000);
+    }
+  }, [settings.serverUrl, fetchMcpMarketplace, searchMcpMarketplace, mcpSearchQuery]);
 
   const applyPersonaTemplate = useCallback(async (personaName) => {
     if (!settings.serverUrl) {
@@ -193,8 +446,9 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
       fetchCurrentMemoryModel();
       fetchCurrentTimezone();
       fetchCustomModels();
+      fetchMcpMarketplace();
     }
-  }, [settings.serverUrl, fetchPersonaDetails, fetchCoreMemoryPersona, fetchCurrentModel, fetchCurrentMemoryModel, fetchCurrentTimezone, fetchCustomModels]);
+  }, [settings.serverUrl, fetchPersonaDetails, fetchCoreMemoryPersona, fetchCurrentModel, fetchCurrentMemoryModel, fetchCurrentTimezone, fetchCustomModels, fetchMcpMarketplace]);
 
   // Fetch current models and timezone whenever settings panel becomes visible
   useEffect(() => {
@@ -204,8 +458,11 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
       fetchCurrentMemoryModel();
       fetchCurrentTimezone();
       fetchCustomModels();
+      fetchMcpMarketplace();
+      // Also refresh MCP status to ensure connections are shown correctly
+      refreshMcpStatus();
     }
-  }, [isVisible, settings.serverUrl, fetchCurrentModel, fetchCurrentMemoryModel, fetchCurrentTimezone, fetchCustomModels]);
+  }, [isVisible, settings.serverUrl, fetchCurrentModel, fetchCurrentMemoryModel, fetchCurrentTimezone, fetchCustomModels, fetchMcpMarketplace, refreshMcpStatus]);
 
   // Refresh all backend data when backend reconnects
   useEffect(() => {
@@ -217,8 +474,16 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
       fetchCurrentMemoryModel();
       fetchCurrentTimezone();
       fetchCustomModels();
+      fetchMcpMarketplace();
     }
-  }, [settings.lastBackendRefresh, settings.serverUrl, fetchPersonaDetails, fetchCoreMemoryPersona, fetchCurrentModel, fetchCurrentMemoryModel, fetchCurrentTimezone, fetchCustomModels]);
+  }, [settings.lastBackendRefresh, settings.serverUrl, fetchPersonaDetails, fetchCoreMemoryPersona, fetchCurrentModel, fetchCurrentMemoryModel, fetchCurrentTimezone, fetchCustomModels, fetchMcpMarketplace]);
+
+  // Handle MCP search and filtering
+  useEffect(() => {
+    if (settings.serverUrl && mcpMarketplace.servers.length > 0) {
+      searchMcpMarketplace(mcpSearchQuery);
+    }
+  }, [mcpSearchQuery, selectedCategory, searchMcpMarketplace, settings.serverUrl, mcpMarketplace.servers.length]);
 
   const handlePersonaChange = async (newPersona) => {
     console.log('handlePersonaChange called with:', newPersona);
@@ -910,6 +1175,127 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
         </div>
 
         <div className="settings-section">
+          <div className="section-header-with-action">
+            <div>
+              <h3>🔧 MCP Tools Marketplace</h3>
+              <p>Discover and connect to Model Context Protocol (MCP) tools to extend your agent's capabilities.</p>
+            </div>
+            <button
+              onClick={refreshMcpStatus}
+              disabled={isLoadingMcp}
+              className="refresh-mcp-btn"
+              title="Refresh MCP connection status"
+            >
+              🔄 Refresh
+            </button>
+          </div>
+          
+          <div className="mcp-marketplace">
+            {/* Search and Filter Controls */}
+            <div className="mcp-controls">
+              <div className="mcp-search">
+                <input
+                  type="text"
+                  placeholder="Search MCP tools..."
+                  value={mcpSearchQuery}
+                  onChange={(e) => setMcpSearchQuery(e.target.value)}
+                  className="mcp-search-input"
+                />
+              </div>
+              <div className="mcp-filter">
+                <select
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  className="mcp-category-select"
+                >
+                  {mcpMarketplace.categories.map(category => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Status Message */}
+            {mcpMessage && (
+              <div className={`mcp-message ${mcpMessage.includes('✅') ? 'success' : mcpMessage.includes('❌') ? 'error' : 'info'}`}>
+                {mcpMessage}
+              </div>
+            )}
+
+            {/* Loading State */}
+            {isLoadingMcp && (
+              <div className="mcp-loading">🔄 Loading MCP tools...</div>
+            )}
+
+            {/* MCP Tools List */}
+            <div className="mcp-servers-list">
+              {mcpSearchResults.map(server => (
+                <div key={server.id} className="mcp-server-item">
+                  <div className="mcp-server-header">
+                    <div className="mcp-server-info">
+                      <h4 className="mcp-server-name">{server.name}</h4>
+                      <span className="mcp-server-category">{server.category}</span>
+                      {server.is_connected && <span className="mcp-connected-badge">✅ Connected</span>}
+                    </div>
+                    <div className="mcp-server-actions">
+                      {server.is_connected ? (
+                        <button
+                          onClick={() => disconnectMcpServer(server.id)}
+                          disabled={isLoadingMcp}
+                          className="mcp-disconnect-btn"
+                        >
+                          Disconnect
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => connectMcpServer(server.id)}
+                          disabled={isLoadingMcp}
+                          className="mcp-connect-btn"
+                        >
+                          Connect
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <p className="mcp-server-description">{server.description}</p>
+                  <div className="mcp-server-details">
+                    {server.author && <span className="mcp-author">By {server.author}</span>}
+                    {server.tags && server.tags.length > 0 && (
+                      <div className="mcp-tags">
+                        {server.tags.map(tag => (
+                          <span key={tag} className="mcp-tag">{tag}</span>
+                        ))}
+                      </div>
+                    )}
+                    {server.requirements && server.requirements.length > 0 && (
+                      <div className="mcp-requirements">
+                        <strong>Requirements:</strong> {server.requirements.join(', ')}
+                      </div>
+                    )}
+                    {server.documentation_url && (
+                      <a 
+                        href={server.documentation_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="mcp-github-link"
+                      >
+                        📖 Documentation
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+              
+              {!isLoadingMcp && mcpSearchResults.length === 0 && (
+                <div className="mcp-no-results">
+                  {mcpSearchQuery ? 'No MCP tools found matching your search.' : 'No MCP tools available.'}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-section">
           <h3>{t('settings.sections.about')}</h3>
           <div className="about-info">
             <p><strong>{t('settings.about.name')}</strong></p>
@@ -944,6 +1330,70 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
           console.log(`Custom model '${modelName}' added successfully`);
         }}
       />
+
+      {/* Gmail Credentials Modal */}
+      {showGmailModal && (
+        <div className="modal-overlay">
+          <div className="modal-content gmail-modal">
+            <div className="modal-header">
+              <h3>📧 Gmail OAuth2 Setup</h3>
+              <button className="modal-close-btn" onClick={handleGmailModalClose}>×</button>
+            </div>
+            <div className="modal-body">
+              <p className="gmail-modal-description">
+                To connect Gmail, you need OAuth2 credentials from Google Cloud Console.
+              </p>
+              <div className="gmail-setup-steps">
+                <ol>
+                  <li>Go to <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">Google Cloud Console</a></li>
+                  <li>Create OAuth2 credentials if you don't have them</li>
+                  <li>Add <code>http://localhost:8080</code>, <code>http://localhost:8081</code>, and <code>http://localhost:8082</code> as redirect URIs</li>
+                  <li>Enter your credentials below</li>
+                </ol>
+              </div>
+              
+              <div className="gmail-form">
+                <div className="form-group">
+                  <label htmlFor="gmail-client-id">Client ID:</label>
+                  <input
+                    id="gmail-client-id"
+                    type="text"
+                    value={gmailCredentials.clientId}
+                    onChange={(e) => setGmailCredentials(prev => ({...prev, clientId: e.target.value}))}
+                    placeholder="Enter your Gmail OAuth2 Client ID"
+                    className="gmail-input"
+                  />
+                </div>
+                
+                <div className="form-group">
+                  <label htmlFor="gmail-client-secret">Client Secret:</label>
+                  <input
+                    id="gmail-client-secret"
+                    type="password"
+                    value={gmailCredentials.clientSecret}
+                    onChange={(e) => setGmailCredentials(prev => ({...prev, clientSecret: e.target.value}))}
+                    placeholder="Enter your Gmail OAuth2 Client Secret"
+                    className="gmail-input"
+                  />
+                </div>
+              </div>
+            </div>
+            
+            <div className="modal-footer">
+              <button className="modal-btn secondary" onClick={handleGmailModalClose}>
+                Cancel
+              </button>
+              <button 
+                className="modal-btn primary" 
+                onClick={handleGmailConnect}
+                disabled={!gmailCredentials.clientId.trim() || !gmailCredentials.clientSecret.trim()}
+              >
+                Connect to Gmail
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

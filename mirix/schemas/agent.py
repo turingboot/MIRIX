@@ -89,6 +89,9 @@ class AgentState(OrmMetadataBase, validate_assignment=True):
     tool_exec_environment_variables: List[AgentEnvironmentVariable] = Field(
         default_factory=list, description="The environment variables for tool execution specific to this agent."
     )
+    mcp_tools: Optional[List[str]] = Field(
+        default_factory=list, description="List of connected MCP server names (e.g., ['gmail-native'])"
+    )
 
     def get_agent_env_vars_as_dict(self) -> Dict[str, str]:
         # Get environment variables for this agent specifically
@@ -148,6 +151,7 @@ class CreateAgent(BaseModel, validate_assignment=True):  #
         None, description="The environment variables for tool execution specific to this agent."
     )
     memory_variables: Optional[Dict[str, str]] = Field(None, description="The variables that should be set for the agent.")
+    mcp_tools: Optional[List[str]] = Field(None, description="List of MCP server names to connect to this agent.")
 
     @field_validator("name")
     @classmethod
@@ -215,6 +219,7 @@ class UpdateAgent(BaseModel):
     tool_exec_environment_variables: Optional[Dict[str, str]] = Field(
         None, description="The environment variables for tool execution specific to this agent."
     )
+    mcp_tools: Optional[List[str]] = Field(None, description="List of MCP server names to connect to this agent.")
 
     class Config:
         extra = "ignore"  # Ignores extra fields

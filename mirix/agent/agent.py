@@ -253,8 +253,66 @@ class Agent(BaseAgent):
         
         return False
 
+    def _execute_mcp_tool(self, function_name: str, function_args: dict, target_mirix_tool: Tool,
+                          request_user_confirmation: Optional[Callable] = None) -> str:
+        """Execute MCP tool using the auto-generated source code."""
+        try:
+
+            # Check if this is a Gmail send operation that needs confirmation
+            if function_name == 'gmail_native_gmail_send_email' and request_user_confirmation:
+                # Prepare email details for confirmation
+                email_details = {
+                    'to': function_args.get('to', ''),
+                    'subject': function_args.get('subject', ''),
+                    'body': function_args.get('body', ''),
+                    'cc': function_args.get('cc', []),
+                    'bcc': function_args.get('bcc', []),
+                    'attachments': function_args.get('attachments', [])
+                }
+                
+                # Request confirmation from user
+                confirmed = request_user_confirmation('gmail_send', email_details)
+                
+                if not confirmed:
+                    return "Email send cancelled by user"
+            
+            # MCP tools have auto-generated source code that we need to execute directly
+            source_code = target_mirix_tool.source_code
+            if not source_code:
+                return f"Error: MCP tool '{function_name}' has no source code"
+            
+            # Create a local namespace with the required imports and self/agent_state
+            local_namespace = {
+                'self': self,
+                'agent_state': self.agent_state,
+                'Optional': Optional,  # Import Optional type
+            }
+            
+            # Execute the auto-generated source code
+            exec(source_code, globals(), local_namespace)
+            
+            # Get the function name from the tool (replace dots/dashes with underscores)
+            func_name = function_name.replace('.', '_').replace('-', '_')
+            
+            if func_name not in local_namespace:
+                return f"Error: Function '{func_name}' not found in MCP tool source code"
+            
+            # Call the function with the provided arguments, including self and agent_state
+            callable_func = local_namespace[func_name]
+            function_args['self'] = self
+            function_args['agent_state'] = self.agent_state
+            
+            result = callable_func(**function_args)
+            return str(result)
+            
+        except Exception as e:
+            error_msg = f"Error executing MCP tool '{function_name}': {str(e)}"
+            self.logger.error(error_msg)
+            return error_msg
+
     def execute_tool_and_persist_state(self, function_name: str, function_args: dict, target_mirix_tool: Tool, 
-                                       display_intermediate_message: Optional[Callable] = None) -> str:
+                                       display_intermediate_message: Optional[Callable] = None,
+                                       request_user_confirmation: Optional[Callable] = None) -> str:
         """
         Execute tool modifications and persist the state of the agent.
         Note: only some agent state modifications will be persisted, such as data in the AgentState ORM and block data
@@ -308,6 +366,10 @@ class Agent(BaseAgent):
                 callable_func = get_function_from_module(MIRIX_EXTRA_TOOL_MODULE_NAME, function_name)
                 function_args["self"] = self  # need to attach self to arg since it's dynamically linked
                 function_response = callable_func(**function_args)
+
+            elif target_mirix_tool.tool_type == ToolType.MIRIX_MCP:
+                # Handle MCP tool execution
+                function_response = self._execute_mcp_tool(function_name, function_args, target_mirix_tool, request_user_confirmation)
 
             else:
                 raise ValueError(f"Tool type {target_mirix_tool.tool_type} not supported")
@@ -522,6 +584,7 @@ class Agent(BaseAgent):
         force_response: bool = False,
         retrieved_memories: str = None,
         display_intermediate_message: Optional[Callable] = None,
+        request_user_confirmation: Optional[Callable] = None,
         return_memory_types_without_update: bool = False,
         message_queue: Optional[any] = None,
         chaining: bool = True,
@@ -667,7 +730,8 @@ class Agent(BaseAgent):
 
                     function_response = self.execute_tool_and_persist_state(function_name, function_args, 
                                                                             target_mirix_tool, 
-                                                                            display_intermediate_message=display_intermediate_message)
+                                                                            display_intermediate_message=display_intermediate_message,
+                                                                            request_user_confirmation=request_user_confirmation)
                     
                     if function_name == 'send_message' or function_name == 'finish_memory_update':
                         assert tool_call_idx == len(response_message.tool_calls) - 1, f"{function_name} must be the last tool call"
@@ -1384,6 +1448,7 @@ These keywords have been used to retrieve relevant memories from the database.
         topics: Optional[str] = None,
         retrieved_memories: Optional[dict] = None,
         display_intermediate_message: any = None,
+        request_user_confirmation: Optional[Callable] = None,
         put_inner_thoughts_first: bool = True,
         existing_file_uris: Optional[List[str]] = None,
         extra_messages: Optional[List[dict]] = None,
@@ -1452,6 +1517,7 @@ These keywords have been used to retrieve relevant memories from the database.
                     force_response=force_response,
                     retrieved_memories=retrieved_memories,
                     display_intermediate_message=display_intermediate_message,
+                    request_user_confirmation=request_user_confirmation,
                     return_memory_types_without_update=return_memory_types_without_update,
                     message_queue=message_queue,
                     chaining=chaining

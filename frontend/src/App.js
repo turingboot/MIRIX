@@ -117,7 +117,6 @@ function App() {
     }
 
     try {
-      console.log('🔍 Checking backend health...');
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
 

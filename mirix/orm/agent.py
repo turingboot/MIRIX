@@ -59,6 +59,9 @@ class Agent(SqlalchemyBase, OrganizationMixin):
 
     # Tool rules
     tool_rules: Mapped[Optional[List[ToolRule]]] = mapped_column(ToolRulesColumn, doc="the tool rules for this agent.")
+    
+    # MCP tools - list of connected MCP server names
+    mcp_tools: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True, doc="List of connected MCP server names (e.g., ['gmail-native'])")
 
     # relationships
     organization: Mapped["Organization"] = relationship("Organization", back_populates="agents")
@@ -109,5 +112,6 @@ class Agent(SqlalchemyBase, OrganizationMixin):
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "tool_exec_environment_variables": self.tool_exec_environment_variables,
+            "mcp_tools": self.mcp_tools,
         }
         return self.__pydantic_model__(**state)

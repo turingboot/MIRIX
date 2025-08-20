@@ -41,3 +41,8 @@ pgvector
 json_repair
 rich
 psycopg2-binary
+mcp
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
