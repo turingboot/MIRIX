@@ -87,19 +87,24 @@ For questions, suggestions, or issues, please open an issue on the GitHub reposi
 
 Connect with other Mirix users, share your thoughts, and get support:
 
+### 💬 Discord Community
+Join our Discord server for real-time discussions, support, and community updates:
+**[https://discord.gg/5HWyxJrh](https://discord.gg/5HWyxJrh)**
+
+### 🎯 Weekly Discussion Sessions
+We host weekly discussion sessions where you can:
+- Discuss issues and bugs
+- Share ideas about future directions
+- Get general consultations and support
+- Connect with the development team and community
+
+**📅 Schedule:** Friday nights, 8-9 PM PST  
+**🔗 Zoom Link:** [https://ucsd.zoom.us/j/96278791276](https://ucsd.zoom.us/j/96278791276)
+
+### 📱 WeChat Group
 <div align="center">
-<table>
-<tr>
-<td align="center">
-<img src="frontend/public/discord-qr.png" alt="Discord QR Code" width="200"/><br/>
-<strong>Discord Community</strong>
-</td>
-<td align="center">
 <img src="frontend/public/wechat-qr.png" alt="WeChat QR Code" width="200"/><br/>
 <strong>WeChat Group</strong>
-</td>
-</tr>
-</table>
 </div>
 
 ## Star History
