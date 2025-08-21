@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from mirix.orm.agents_tags import AgentsTags
     from mirix.orm.organization import Organization
     from mirix.orm.tool import Tool
+    from mirix.orm.user import User
 
 
 class Agent(SqlalchemyBase, OrganizationMixin):

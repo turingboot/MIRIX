@@ -70,6 +70,7 @@ class Block(BaseBlock):
     id: str = BaseBlock.generate_id_field()
 
     # associated user/agent
+    user_id: Optional[str] = Field(None, description="The unique identifier of the user associated with the block.")
     organization_id: Optional[str] = Field(None, description="The unique identifier of the organization associated with the block.")
 
     # default orm fields

@@ -50,8 +50,9 @@ class MessageManager:
     def create_message(self, pydantic_msg: PydanticMessage, actor: PydanticUser) -> PydanticMessage:
         """Create a new message."""
         with self.session_maker() as session:
-            # Set the organization id of the Pydantic message
+            # Set the organization id and user id of the Pydantic message
             pydantic_msg.organization_id = actor.organization_id
+            pydantic_msg.user_id = actor.id
             msg_data = pydantic_msg.model_dump()
             msg = MessageModel(**msg_data)
             msg.create(session, actor=actor)  # Persist to database

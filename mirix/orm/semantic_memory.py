@@ -2,7 +2,7 @@ from typing import TYPE_CHECKING, Optional
 from sqlalchemy import Column, JSON, String, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, declared_attr, relationship
 from mirix.orm.sqlalchemy_base import SqlalchemyBase
-from mirix.orm.mixins import OrganizationMixin
+from mirix.orm.mixins import OrganizationMixin, UserMixin
 from mirix.schemas.semantic_memory import SemanticMemoryItem as PydanticSemanticMemoryItem
 from datetime import datetime
 import datetime as dt
@@ -12,9 +12,10 @@ from mirix.settings import settings
 
 if TYPE_CHECKING:
     from mirix.orm.organization import Organization
+    from mirix.orm.user import User
 
 
-class SemanticMemoryItem(SqlalchemyBase, OrganizationMixin):
+class SemanticMemoryItem(SqlalchemyBase, OrganizationMixin, UserMixin):
     """
     Stores semantic memory entries that represent general knowledge,
     concepts, facts, and language elements that can be accessed without 
@@ -122,5 +123,15 @@ class SemanticMemoryItem(SqlalchemyBase, OrganizationMixin):
         return relationship(
             "Organization",
             back_populates="semantic_memory",
+            lazy="selectin"
+        )
+
+    @declared_attr
+    def user(cls) -> Mapped["User"]:
+        """
+        Relationship to the User that owns this semantic memory item.
+        """
+        return relationship(
+            "User",
             lazy="selectin"
         )

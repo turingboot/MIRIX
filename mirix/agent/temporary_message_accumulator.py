@@ -305,7 +305,7 @@ class TemporaryMessageAccumulator:
             
             return most_recent_images
     
-    def absorb_content_into_memory(self, agent_states, ready_messages=None):
+    def absorb_content_into_memory(self, agent_states, ready_messages=None, user_id=None):
         """Process accumulated content and send to memory agents."""
 
         if ready_messages is not None:
@@ -466,10 +466,10 @@ class TemporaryMessageAccumulator:
         t1 = time.time()
         if SKIP_META_MEMORY_MANAGER:
             # Send to memory agents in parallel
-            self._send_to_memory_agents_separately(message, set(list(self.uri_to_create_time.keys())), agent_states)
+            self._send_to_memory_agents_separately(message, set(list(self.uri_to_create_time.keys())), agent_states, user_id=user_id)
         else:
             # Send to meta memory agent
-            response, agent_type = self._send_to_meta_memory_agent(message, set(list(self.uri_to_create_time.keys())), agent_states)
+            response, agent_type = self._send_to_meta_memory_agent(message, set(list(self.uri_to_create_time.keys())), agent_states, user_id=user_id)
 
         t2 = time.time()
         self.logger.info(f"Time taken to send to memory agents: {t2 - t1} seconds")
@@ -631,14 +631,15 @@ class TemporaryMessageAccumulator:
             user_message_added = True
         return message, user_message_added
     
-    def _send_to_meta_memory_agent(self, message, existing_file_uris, agent_states):
+    def _send_to_meta_memory_agent(self, message, existing_file_uris, agent_states, user_id=None):
         """Send the processed content to the meta memory agent."""
         
         payloads = {
             'message': message,
             'existing_file_uris': existing_file_uris,
             'chaining': CHAINING_FOR_MEMORY_UPDATE,
-            'message_queue': self.message_queue
+            'message_queue': self.message_queue,
+            'user_id': user_id
         }
 
         response, agent_type = self.message_queue.send_message_in_queue(
@@ -646,7 +647,7 @@ class TemporaryMessageAccumulator:
         )
         return response, agent_type
 
-    def _send_to_memory_agents_separately(self, message, existing_file_uris, agent_states):
+    def _send_to_memory_agents_separately(self, message, existing_file_uris, agent_states, user_id=None):
         """Send the processed content to all memory agents in parallel."""
         import time
         import threading
@@ -655,6 +656,7 @@ class TemporaryMessageAccumulator:
             'message': message,
             'existing_file_uris': existing_file_uris,
             'chaining': CHAINING_FOR_MEMORY_UPDATE,
+            'user_id': user_id
         }
         
         responses = []

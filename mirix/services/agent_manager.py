@@ -517,7 +517,9 @@ class AgentManager:
     @enforce_types
     def get_in_context_messages(self, agent_id: str, actor: PydanticUser) -> List[PydanticMessage]:
         message_ids = self.get_agent_by_id(agent_id=agent_id, actor=actor).message_ids
-        return self.message_manager.get_messages_by_ids(message_ids=message_ids, actor=actor)
+        messages = self.message_manager.get_messages_by_ids(message_ids=message_ids, actor=actor)
+        messages = [messages[0]] + [message for message in messages[1:] if message.user_id == actor.id]
+        return messages
 
     @enforce_types
     def get_system_message(self, agent_id: str, actor: PydanticUser) -> PydanticMessage:
@@ -551,14 +553,33 @@ class AgentManager:
     @enforce_types
     def trim_older_in_context_messages(self, num: int, agent_id: str, actor: PydanticUser) -> PydanticAgentState:
         message_ids = self.get_agent_by_id(agent_id=agent_id, actor=actor).message_ids
-        new_messages = [message_ids[0]] + message_ids[num:]  # 0 is system message
+        system_message_id = message_ids[0]
+        message_ids = message_ids[1:]
+
+        message_id_indices_belonging_to_actor = [idx for idx, message_id in enumerate(message_ids) if self.message_manager.get_message_by_id(message_id=message_id, actor=actor).user_id == actor.id]
+        message_id_indices_belonging_to_actor = message_id_indices_belonging_to_actor[num-1:]
+        message_ids_to_keep = [message_ids[idx] for idx in message_id_indices_belonging_to_actor]
+
+        message_id_indices_belonging_to_actor = set(message_id_indices_belonging_to_actor)
+        message_ids_to_keep = set(message_ids_to_keep)
+
+        # new_messages = [message_ids[0]] + message_ids[num:]  # 0 is system message
+        new_messages = [system_message_id] + [msg_id for msg_id in message_ids if (msg_id not in message_id_indices_belonging_to_actor or msg_id in message_ids_to_keep)]
         return self.set_in_context_messages(agent_id=agent_id, message_ids=new_messages, actor=actor)
 
     @enforce_types
     def trim_all_in_context_messages_except_system(self, agent_id: str, actor: PydanticUser) -> PydanticAgentState:
         message_ids = self.get_agent_by_id(agent_id=agent_id, actor=actor).message_ids
-        new_messages = [message_ids[0]]  # 0 is system message
-        return self.set_in_context_messages(agent_id=agent_id, message_ids=new_messages, actor=actor)
+        system_message_id = message_ids[0]  # 0 is system message
+        
+        # Keep system message and only filter out messages belonging to the current actor
+        new_message_ids = [system_message_id]
+        for message_id in message_ids[1:]:  # Skip system message
+            message = self.message_manager.get_message_by_id(message_id=message_id, actor=actor)
+            if message.user_id != actor.id:
+                new_message_ids.append(message_id)
+        
+        return self.set_in_context_messages(agent_id=agent_id, message_ids=new_message_ids, actor=actor)
 
     @enforce_types
     def prepend_to_in_context_messages(self, messages: List[PydanticMessage], agent_id: str, actor: PydanticUser) -> PydanticAgentState:
@@ -577,31 +598,44 @@ class AgentManager:
     @enforce_types
     def reset_messages(self, agent_id: str, actor: PydanticUser, add_default_initial_messages: bool = False) -> PydanticAgentState:
         """
-        Removes all in-context messages for the specified agent by:
-          1) Clearing the agent.messages relationship (which cascades delete-orphans).
-          2) Resetting the message_ids list to empty.
-          3) Committing the transaction.
+        Removes messages belonging to the specified actor from the agent's conversation history.
+        Preserves system messages and messages from other actors.
 
         This action is destructive and cannot be undone once committed.
 
         Args:
             add_default_initial_messages: If true, adds the default initial messages after resetting.
             agent_id (str): The ID of the agent whose messages will be reset.
-            actor (PydanticUser): The user performing this action.
+            actor (PydanticUser): The user performing this action - only their messages will be removed.
 
         Returns:
-            PydanticAgentState: The updated agent state with no linked messages.
+            PydanticAgentState: The updated agent state with actor's messages removed.
         """
         with self.session_maker() as session:
             # Retrieve the existing agent (will raise NoResultFound if invalid)
             agent = AgentModel.read(db_session=session, identifier=agent_id, actor=actor)
 
-            # Because of cascade="all, delete-orphan" on agent.messages, setting
-            # this relationship to an empty list will physically remove them from the DB.
-            agent.messages = []
+            # Get current messages to filter
+            current_messages = agent.messages
+            
+            # Filter out messages belonging to the specific actor, but keep:
+            # 1. System messages (role='system')
+            # 2. Messages from other actors (user_id != actor.id)
+            messages_to_keep = []
+            messages_to_remove = []
+            
+            for message in current_messages:
+                if message.role == 'system' or message.user_id == actor.id:
+                    messages_to_remove.append(message)
+                else:
+                    messages_to_keep.append(message)
 
-            # Also clear out the message_ids field to keep in-context memory consistent
-            agent.message_ids = []
+            # Update the agent's messages relationship to only keep filtered messages
+            agent.messages = messages_to_keep
+
+            # Update message_ids to reflect the remaining messages
+            # Keep the order based on created_at timestamp
+            agent.message_ids = [msg.id for msg in messages_to_keep]
 
             # Commit the update
             agent.update(db_session=session, actor=actor)

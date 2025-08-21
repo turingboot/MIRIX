@@ -177,7 +177,7 @@ class ProceduralMemoryManager:
         
         return word_matches
 
-    def _postgresql_fulltext_search(self, session, base_query, query_text, search_field, limit):
+    def _postgresql_fulltext_search(self, session, base_query, query_text, search_field, limit, actor):
         """
         Efficient PostgreSQL-native full-text search using ts_rank_cd for BM25-like functionality.
         This method leverages PostgreSQL's built-in full-text search capabilities and GIN indexes.
@@ -256,16 +256,18 @@ class ProceduralMemoryManager:
                 SELECT 
                     id, created_at, entry_type, summary, steps, tree_path,
                     steps_embedding, summary_embedding, embedding_config,
-                    organization_id, metadata_, last_modify,
+                    organization_id, metadata_, last_modify, user_id,
                     {rank_sql} as rank_score
                 FROM procedural_memory 
                 WHERE {tsvector_sql} @@ to_tsquery('english', :tsquery)
+                    AND user_id = :user_id
                 ORDER BY rank_score DESC, created_at DESC
                 LIMIT :limit_val
             """)
             
             results = list(session.execute(and_query_sql, {
                 'tsquery': tsquery_string_and,
+                'user_id': actor.id,
                 'limit_val': limit or 50
             }))
             
@@ -305,16 +307,18 @@ class ProceduralMemoryManager:
                 SELECT 
                     id, created_at, entry_type, summary, steps, tree_path,
                     steps_embedding, summary_embedding, embedding_config,
-                    organization_id, metadata_, last_modify,
+                    organization_id, metadata_, last_modify, user_id,
                     {rank_sql} as rank_score
                 FROM procedural_memory 
                 WHERE {tsvector_sql} @@ to_tsquery('english', :tsquery)
+                    AND user_id = :user_id
                 ORDER BY rank_score DESC, created_at DESC
                 LIMIT :limit_val
             """)
             
             results = session.execute(or_query_sql, {
                 'tsquery': tsquery_string_or,
+                'user_id': actor.id,
                 'limit_val': limit or 50
             })
             
@@ -372,10 +376,10 @@ class ProceduralMemoryManager:
 
     @update_timezone
     @enforce_types
-    def get_most_recently_updated_item(self, organization_id: Optional[str] = None, timezone_str: str = None) -> Optional[PydanticProceduralMemoryItem]:
+    def get_most_recently_updated_item(self, actor: PydanticUser, timezone_str: str = None) -> Optional[PydanticProceduralMemoryItem]:
         """
         Fetch the most recently updated procedural memory item based on last_modify timestamp.
-        Optionally filter by organization_id.
+        Filter by user_id from actor.
         Returns None if no items exist.
         """
         with self.session_maker() as session:
@@ -385,8 +389,8 @@ class ProceduralMemoryManager:
                 cast(text("procedural_memory.last_modify ->> 'timestamp'"), DateTime).desc()
             )
             
-            if organization_id:
-                query = query.where(ProceduralMemoryItem.organization_id == organization_id)
+            # Filter by user_id for multi-user support
+            query = query.where(ProceduralMemoryItem.user_id == actor.id)
             
             result = session.execute(query.limit(1))
             item = result.scalar_one_or_none()
@@ -394,7 +398,7 @@ class ProceduralMemoryManager:
             return [item.to_pydantic()] if item else None
 
     @enforce_types
-    def create_item(self, item_data: PydanticProceduralMemoryItem) -> PydanticProceduralMemoryItem:
+    def create_item(self, item_data: PydanticProceduralMemoryItem, actor: PydanticUser) -> PydanticProceduralMemoryItem:
         """Create a new procedural memory item."""
         
         # Ensure ID is set before model_dump
@@ -411,6 +415,9 @@ class ProceduralMemoryManager:
                 raise ValueError(f"Required field '{field}' missing from procedural memory data")
 
         data_dict.setdefault("metadata_", {})
+        
+        # Set user_id from actor for multi-user support
+        data_dict["user_id"] = actor.id
 
         with self.session_maker() as session:
             item = ProceduralMemoryItem(**data_dict)
@@ -435,10 +442,12 @@ class ProceduralMemoryManager:
         """Create multiple procedural memory items."""
         return [self.create_item(i, actor) for i in items]
 
-    def get_total_number_of_items(self) -> int:
-        """Get the total number of items in the procedural memory."""
+    def get_total_number_of_items(self, actor: PydanticUser) -> int:
+        """Get the total number of items in the procedural memory for the user."""
         with self.session_maker() as session:
-            query = select(func.count(ProceduralMemoryItem.id))
+            query = select(func.count(ProceduralMemoryItem.id)).where(
+                ProceduralMemoryItem.user_id == actor.id
+            )
             result = session.execute(query)
             return result.scalar_one()
 
@@ -446,6 +455,7 @@ class ProceduralMemoryManager:
     @enforce_types
     def list_procedures(self, 
                         agent_state: AgentState,
+                        actor: PydanticUser,
                         query: str = '', 
                         embedded_text: Optional[List[float]] = None,
                         search_field: str = '',
@@ -487,7 +497,9 @@ class ProceduralMemoryManager:
         with self.session_maker() as session:
             
             if query == '':
-                query_stmt = select(ProceduralMemoryItem).order_by(ProceduralMemoryItem.created_at.desc())
+                query_stmt = select(ProceduralMemoryItem).where(
+                    ProceduralMemoryItem.user_id == actor.id
+                ).order_by(ProceduralMemoryItem.created_at.desc())
                 if limit:
                     query_stmt = query_stmt.limit(limit)
                 result = session.execute(query_stmt)
@@ -509,6 +521,9 @@ class ProceduralMemoryManager:
                     ProceduralMemoryItem.metadata_.label("metadata_"),
                     ProceduralMemoryItem.last_modify.label("last_modify"),
                     ProceduralMemoryItem.tree_path.label("tree_path"),
+                    ProceduralMemoryItem.user_id.label("user_id"),
+                ).where(
+                    ProceduralMemoryItem.user_id == actor.id
                 )
 
                 if search_method == 'embedding':
@@ -545,12 +560,14 @@ class ProceduralMemoryManager:
                     if settings.mirix_pg_uri_no_default:
                         # Use PostgreSQL native full-text search
                         return self._postgresql_fulltext_search(
-                            session, base_query, query, search_field, limit
+                            session, base_query, query, search_field, limit, actor
                         )
                     else:
                         # Fallback to in-memory BM25 for SQLite (legacy method)
                         # Load all candidate items (memory-intensive, kept for compatibility)
-                        result = session.execute(select(ProceduralMemoryItem))
+                        result = session.execute(select(ProceduralMemoryItem).where(
+                            ProceduralMemoryItem.user_id == actor.id
+                        ))
                         all_items = result.scalars().all()
                         
                         if not all_items:
@@ -623,7 +640,9 @@ class ProceduralMemoryManager:
 
                 elif search_method == 'fuzzy_match':
                     # For fuzzy matching, load all candidate items into memory.
-                    result = session.execute(select(ProceduralMemoryItem))
+                    result = session.execute(select(ProceduralMemoryItem).where(
+                        ProceduralMemoryItem.user_id == actor.id
+                    ))
                     all_items = result.scalars().all()
                     scored_items = []
                     for item in all_items:
@@ -661,6 +680,7 @@ class ProceduralMemoryManager:
                          entry_type: str,
                          summary: Optional[str],
                          steps: List[str],
+                         actor: PydanticUser,
                          organization_id: str,
                          tree_path: Optional[List[str]] = None) -> PydanticProceduralMemoryItem:
         
@@ -683,23 +703,25 @@ class ProceduralMemoryManager:
                     entry_type=entry_type,
                     summary=summary,
                     steps=steps,
+                    user_id=actor.id,
                     tree_path=tree_path or [],
                     organization_id=organization_id,
                     summary_embedding=summary_embedding,
                     steps_embedding=steps_embedding,
                     embedding_config=embedding_config,
                 ),
+                actor=actor
             )
             return procedure
         
         except Exception as e:
             raise e     
         
-    def delete_procedure_by_id(self, procedure_id: str) -> None:
+    def delete_procedure_by_id(self, procedure_id: str, actor: PydanticUser) -> None:
         """Delete a procedural memory item by ID."""
         with self.session_maker() as session:
             try:
-                item = ProceduralMemoryItem.read(db_session=session, identifier=procedure_id)
+                item = ProceduralMemoryItem.read(db_session=session, identifier=procedure_id, actor=actor)
                 item.hard_delete(session)
             except NoResultFound:
                 raise NoResultFound(f"Procedural memory item with id {procedure_id} not found.")

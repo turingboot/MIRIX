@@ -1098,6 +1098,7 @@ class LocalClient(AbstractClient):
         chaining: Optional[bool] = None,
         message_queue: Optional[any] = None,
         retrieved_memories: Optional[dict] = None,
+        user_id: Optional[str] = None,
     ) -> MirixResponse:
         """
         Send a message to an agent
@@ -1239,7 +1240,8 @@ class LocalClient(AbstractClient):
             chaining=chaining,
             existing_file_uris=existing_file_uris,
             extra_messages=extra_messages,
-            message_queue=message_queue
+            message_queue=message_queue,
+            user_id=user_id
         )
 
         # format messages

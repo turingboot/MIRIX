@@ -23,6 +23,7 @@ class ProceduralMemoryItem(ProceduralMemoryItemBase):
     Full procedural memory item schema, with database-related fields.
     """
     id: Optional[str] = Field(None, description="Unique identifier for the procedural memory item")
+    user_id: str = Field(..., description="The id of the user who generated the procedure")
     created_at: datetime = Field(default_factory=get_utc_time, description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
     last_modify: Dict[str, Any] = Field(

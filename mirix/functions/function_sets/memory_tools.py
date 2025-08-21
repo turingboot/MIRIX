@@ -94,10 +94,11 @@ def episodic_memory_insert(self: "Agent", items: List[EpisodicEventForLLM]):
     """
     for item in items:
         self.episodic_memory_manager.insert_event(
+            actor=self.user,
             agent_state=self.agent_state,
             timestamp=item['occurred_at'],
             event_type=item['event_type'],
-            actor=item['actor'],
+            event_actor=item['actor'],
             summary=item['summary'],
             details=item['details'],
             organization_id=self.user.organization_id,
@@ -122,7 +123,8 @@ def episodic_memory_merge(self: "Agent", event_id: str, combined_summary: str = 
     episodic_memory = self.episodic_memory_manager.update_event(
         event_id=event_id,
         new_summary=combined_summary,
-        new_details=combined_details
+        new_details=combined_details,
+        actor=self.user
     )
     response = "These are the `summary` and the `details` of the updated event:\n", str({'event_id': episodic_memory.id, 'summary': episodic_memory.summary, 'details': episodic_memory.details}) + "\nIf the `details` are too verbose, or the `summary` cannot cover the information in the `details`, call episodic_memory_replace to update this event."
     return response
@@ -138,17 +140,18 @@ def episodic_memory_replace(self: "Agent", event_ids: List[str], new_items: List
 
     for event_id in event_ids:
         # It will raise an error if the event_id is not found in the episodic memory.
-        self.episodic_memory_manager.get_episodic_memory_by_id(event_id)
+        self.episodic_memory_manager.get_episodic_memory_by_id(event_id, actor=self.user)
 
     for event_id in event_ids:
-        self.episodic_memory_manager.delete_event_by_id(event_id)
+        self.episodic_memory_manager.delete_event_by_id(event_id, actor=self.user)
 
     for new_item in new_items:
         self.episodic_memory_manager.insert_event(
+            actor=self.user,
             agent_state=self.agent_state,
             timestamp=new_item['occurred_at'],
             event_type=new_item['event_type'],
-            actor=new_item['actor'],
+            event_actor=new_item['actor'],
             summary=new_item['summary'],
             details=new_item['details'],
             organization_id=self.user.organization_id,
@@ -166,7 +169,7 @@ def check_episodic_memory(self: "Agent", event_ids: List[str], timezone_str: str
         List[EpisodicEventForLLM]: List of episodic events with the given event_ids.
     """
     episodic_memory = [
-        self.episodic_memory_manager.get_episodic_memory_by_id(event_id, timezone_str=timezone_str) for event_id in event_ids
+        self.episodic_memory_manager.get_episodic_memory_by_id(event_id, timezone_str=timezone_str, actor=self.user) for event_id in event_ids
     ]
 
     formatted_results = [{'event_id': x.id, 'timestamp': x.occurred_at, 'event_type': x.event_type, 'actor': x.actor, 'summary': x.summary, 'details': x.details, 'tree_path': x.tree_path} for x in episodic_memory]
@@ -191,6 +194,7 @@ def resource_memory_insert(self: "Agent", items: List[ResourceMemoryItemBase]):
             summary=item['summary'],
             resource_type=item['resource_type'],
             content=item['content'],
+            actor=self.user,
             organization_id=self.user.organization_id,
             tree_path=item.get('tree_path')
         )
@@ -206,7 +210,8 @@ def resource_memory_update(self: "Agent", old_ids: List[str], new_items: List[Re
     
     for old_id in old_ids:
         self.resource_memory_manager.delete_resource_by_id(
-            resource_id=old_id
+            resource_id=old_id,
+            actor=self.user
         )
     
     for item in new_items:
@@ -216,6 +221,7 @@ def resource_memory_update(self: "Agent", old_ids: List[str], new_items: List[Re
             summary=item['summary'],
             resource_type=item['resource_type'],
             content=item['content'],
+            actor=self.user,
             organization_id=self.user.organization_id,
             tree_path=item.get('tree_path')
         )
@@ -236,6 +242,7 @@ def procedural_memory_insert(self: "Agent", items: List[ProceduralMemoryItemBase
             entry_type=item['entry_type'],
             summary=item['summary'],
             steps=item['steps'],
+            actor=self.user,
             organization_id=self.user.organization_id,
             tree_path=item.get('tree_path')
         )
@@ -253,7 +260,8 @@ def procedural_memory_update(self: "Agent", old_ids: List[str], new_items: List[
     """
     for old_id in old_ids:
         self.procedural_memory_manager.delete_procedure_by_id(
-            procedure_id=old_id
+            procedure_id=old_id,
+            actor=self.user
         )
     
     for item in new_items:
@@ -262,6 +270,7 @@ def procedural_memory_update(self: "Agent", old_ids: List[str], new_items: List[
             entry_type=item['entry_type'],
             summary=item['summary'],
             steps=item['steps'],
+            actor=self.user,
             organization_id=self.user.organization_id,
             tree_path=item.get('tree_path')
         )
@@ -277,7 +286,7 @@ def check_semantic_memory(self: "Agent", semantic_item_ids: List[str], timezone_
         List[SemanticMemoryItemBase]: List of semantic memory items with the given ids.
     """
     semantic_memory = [
-        self.semantic_memory_manager.get_semantic_item_by_id(semantic_memory_id=id, timezone_str=timezone_str) for id in semantic_item_ids
+        self.semantic_memory_manager.get_semantic_item_by_id(semantic_memory_id=id, timezone_str=timezone_str, actor=self.user) for id in semantic_item_ids
     ]
 
     formatted_results = [{'semantic_item_id': x.id, 'name': x.name, 'summary': x.summary, 'details': x.details, 'source': x.source, 'tree_path': x.tree_path} for x in semantic_memory]
@@ -302,7 +311,8 @@ def semantic_memory_insert(self: "Agent", items: List[SemanticMemoryItemBase]):
             details=item['details'],
             source=item['source'],
             tree_path=item['tree_path'],
-            organization_id=self.user.organization_id
+            organization_id=self.user.organization_id,
+            actor=self.user
         )
 
 def semantic_memory_update(self: "Agent", old_semantic_item_ids: List[str], new_items: List[SemanticMemoryItemBase]):
@@ -319,7 +329,8 @@ def semantic_memory_update(self: "Agent", old_semantic_item_ids: List[str], new_
 
     for old_id in old_semantic_item_ids:
         self.semantic_memory_manager.delete_semantic_item_by_id(
-            semantic_memory_id=old_id
+            semantic_memory_id=old_id,
+            actor=self.user
         )
     
     new_ids = []
@@ -330,6 +341,7 @@ def semantic_memory_update(self: "Agent", old_semantic_item_ids: List[str], new_
             summary=item['summary'],
             details=item['details'],
             source=item['source'],
+            actor=self.user,
             tree_path=item['tree_path'],
             organization_id=self.user.organization_id
         )
@@ -356,6 +368,7 @@ def knowledge_vault_insert(self: "Agent", items: List[KnowledgeVaultItemBase]):
             sensitivity=item['sensitivity'],
             secret_value=item['secret_value'],
             caption=item['caption'],
+            actor=self.user,
             organization_id=self.user.organization_id
         )
 
@@ -372,7 +385,8 @@ def knowledge_vault_update(self: "Agent", old_ids: List[str], new_items: List[Kn
     """
     for old_id in old_ids:
         self.knowledge_vault_manager.delete_knowledge_by_id(
-            knowledge_vault_item_id=old_id
+            knowledge_vault_item_id=old_id,
+            actor=self.user
         )
     
     for item in new_items:
@@ -383,6 +397,7 @@ def knowledge_vault_update(self: "Agent", old_ids: List[str], new_items: List[Kn
             sensitivity=item['sensitivity'],
             secret_value=item['secret_value'],
             caption=item['caption'],
+            actor=self.user,
             organization_id=self.user.organization_id
         )
 
@@ -434,8 +449,10 @@ def trigger_memory_update_with_instruction(self: "Agent", user_message: object, 
     if matching_agent is None:
         raise ValueError(f"No agent found with type '{agent_type}'")
     
-    client.send_message(agent_id=matching_agent.id, 
+    client.send_message(
         role='user', 
+        user_id=self.user.id,
+        agent_id=matching_agent.id, 
         message="[Message from Chat Agent (Now you are allowed to make multiple function calls sequentially)] " +instruction, 
         existing_file_uris=user_message['existing_file_uris'],
         retrieved_memories=user_message.get('retrieved_memories', None)
@@ -493,6 +510,7 @@ def trigger_memory_update(self: "Agent", user_message: object, memory_types: Lis
         
         # Prepare payloads for message queue
         payloads = {
+            'user_id': self.user.id,
             'message': user_message['message'],
             'existing_file_uris': user_message.get('existing_file_uris', set()),
             'chaining': user_message.get('chaining', False),

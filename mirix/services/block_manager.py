@@ -69,8 +69,11 @@ class BlockManager:
     ) -> List[PydanticBlock]:
         """Retrieve blocks based on various optional filters."""
         with self.session_maker() as session:
-            # Prepare filters
-            filters = {"organization_id": actor.organization_id}
+            # Prepare filters - include user_id for multi-user support
+            filters = {
+                "organization_id": actor.organization_id,
+                "user_id": actor.id
+            }
             if label:
                 filters["label"] = label
             if is_template is not None:

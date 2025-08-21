@@ -31,6 +31,7 @@ class KnowledgeVaultItem(KnowledgeVaultItemBase):
         updated_at (Optional[datetime]): Last update timestamp.
     """
     id: Optional[str] = Field(None, description="Unique identifier for the knowledge vault item")
+    user_id: str = Field(..., description="The id of the user who generated the knowledge vault item")
     created_at: datetime = Field(default_factory=get_utc_time, description="The creation date of the knowledge vault item")
     updated_at: Optional[datetime] = Field(None, description="The last update date of the knowledge vault item")
     last_modify: Dict[str, Any] = Field(

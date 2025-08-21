@@ -11,7 +11,7 @@ from mirix.constants import CORE_MEMORY_BLOCK_CHAR_LIMIT
 from mirix.schemas.block import Block
 from mirix.schemas.message import Message
 from mirix.schemas.openai.chat_completion_request import Tool
-
+from mirix.schemas.user import User as PydanticUser
 
 class ContextWindowOverview(BaseModel):
     """
@@ -222,7 +222,7 @@ class ChatMemory(BasicBlockMemory):
     ChatMemory initializes a BaseChatMemory with two default blocks, `human` and `persona`.
     """
 
-    def __init__(self, persona: str, human: str, limit: int = CORE_MEMORY_BLOCK_CHAR_LIMIT):
+    def __init__(self, persona: str, human: str, actor: PydanticUser, limit: int = CORE_MEMORY_BLOCK_CHAR_LIMIT):
         """
         Initialize the ChatMemory object with a persona and human string.
 
@@ -232,7 +232,7 @@ class ChatMemory(BasicBlockMemory):
             limit (int): The character limit for each block.
         """
         # TODO: Should these be CreateBlocks?
-        super().__init__(blocks=[Block(value=persona, limit=limit, label="persona"), Block(value=human, limit=limit, label="human")])
+        super().__init__(blocks=[Block(value=persona, limit=limit, label="persona", user_id=actor.id), Block(value=human, limit=limit, label="human", user_id=actor.id)])
 
 
 class UpdateMemory(BaseModel):

@@ -31,6 +31,12 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
   const [mcpMessage, setMcpMessage] = useState('');
   const [showGmailModal, setShowGmailModal] = useState(false);
   const [gmailCredentials, setGmailCredentials] = useState({ clientId: '', clientSecret: '' });
+  const [users, setUsers] = useState([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [newUserName, setNewUserName] = useState('');
 
   // Debug logging for settings
   useEffect(() => {
@@ -217,6 +223,39 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
     }
   }, [settings.serverUrl]);
 
+  const fetchUsers = useCallback(async () => {
+    if (!settings.serverUrl) {
+      console.log('fetchUsers: serverUrl not available yet');
+      return;
+    }
+    try {
+      setIsLoadingUsers(true);
+      console.log('Fetching users data...');
+      const response = await queuedFetch(`${settings.serverUrl}/users`);
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Users data:', data);
+        const usersList = data.users || [];
+        setUsers(usersList);
+        
+        // Set current user (find user with active status)
+        const activeUser = usersList.find(user => user.status === 'active');
+        if (activeUser) {
+          setCurrentUser(activeUser);
+        } else if (!currentUser && usersList.length > 0) {
+          // Fallback: if no active user found, use first user
+          setCurrentUser(usersList[0]);
+        }
+      } else {
+        console.error('Failed to fetch users');
+      }
+    } catch (error) {
+      console.error('Error fetching users:', error);
+    } finally {
+      setIsLoadingUsers(false);
+    }
+  }, [settings.serverUrl]);
+
   const searchMcpMarketplace = useCallback(async (query = '') => {
     if (!settings.serverUrl) {
       return;
@@ -372,6 +411,89 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
     setGmailCredentials({ clientId: '', clientSecret: '' });
   }, []);
 
+  const handleUserSelection = useCallback(async (selectedUser) => {
+    if (!settings.serverUrl) {
+      return;
+    }
+    
+    try {
+      console.log('Switching to user:', selectedUser);
+      
+      const response = await queuedFetch(`${settings.serverUrl}/users/switch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: selectedUser.id })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setCurrentUser(selectedUser);
+          console.log('Successfully switched to user:', data.user);
+          // Refresh users list to update status
+          await fetchUsers();
+        } else {
+          console.error('Failed to switch user:', data.message);
+        }
+      } else {
+        console.error('Failed to switch user - server error');
+      }
+    } catch (error) {
+      console.error('Error switching user:', error);
+    } finally {
+      setIsUserDropdownOpen(false);
+    }
+  }, [settings.serverUrl, fetchUsers]);
+
+  const handleCreateUser = useCallback(async () => {
+    if (!settings.serverUrl || !newUserName.trim()) {
+      return;
+    }
+    
+    try {
+      const response = await queuedFetch(`${settings.serverUrl}/users/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newUserName.trim() })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('User created successfully:', data);
+        
+        // Refresh users list
+        await fetchUsers();
+        
+        // Close modal and reset form
+        setShowAddUserModal(false);
+        setNewUserName('');
+        
+        // Set the new user as current user
+        if (data.user) {
+          setCurrentUser(data.user);
+        }
+      } else {
+        console.error('Failed to create user');
+      }
+    } catch (error) {
+      console.error('Error creating user:', error);
+    }
+  }, [settings.serverUrl, newUserName, fetchUsers]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (isUserDropdownOpen && !event.target.closest('.user-selector-dropdown')) {
+        setIsUserDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isUserDropdownOpen]);
+
   const disconnectMcpServer = useCallback(async (serverId) => {
     if (!settings.serverUrl) {
       return;
@@ -447,8 +569,9 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
       fetchCurrentTimezone();
       fetchCustomModels();
       fetchMcpMarketplace();
+      fetchUsers();
     }
-  }, [settings.serverUrl, fetchPersonaDetails, fetchCoreMemoryPersona, fetchCurrentModel, fetchCurrentMemoryModel, fetchCurrentTimezone, fetchCustomModels, fetchMcpMarketplace]);
+  }, [settings.serverUrl, fetchPersonaDetails, fetchCoreMemoryPersona, fetchCurrentModel, fetchCurrentMemoryModel, fetchCurrentTimezone, fetchCustomModels, fetchMcpMarketplace, fetchUsers]);
 
   // Fetch current models and timezone whenever settings panel becomes visible
   useEffect(() => {
@@ -459,10 +582,11 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
       fetchCurrentTimezone();
       fetchCustomModels();
       fetchMcpMarketplace();
+      fetchUsers();
       // Also refresh MCP status to ensure connections are shown correctly
       refreshMcpStatus();
     }
-  }, [isVisible, settings.serverUrl, fetchCurrentModel, fetchCurrentMemoryModel, fetchCurrentTimezone, fetchCustomModels, fetchMcpMarketplace, refreshMcpStatus]);
+  }, [isVisible, settings.serverUrl, fetchCurrentModel, fetchCurrentMemoryModel, fetchCurrentTimezone, fetchCustomModels, fetchMcpMarketplace, fetchUsers, refreshMcpStatus]);
 
   // Refresh all backend data when backend reconnects
   useEffect(() => {
@@ -475,8 +599,9 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
       fetchCurrentTimezone();
       fetchCustomModels();
       fetchMcpMarketplace();
+      fetchUsers();
     }
-  }, [settings.lastBackendRefresh, settings.serverUrl, fetchPersonaDetails, fetchCoreMemoryPersona, fetchCurrentModel, fetchCurrentMemoryModel, fetchCurrentTimezone, fetchCustomModels, fetchMcpMarketplace]);
+  }, [settings.lastBackendRefresh, settings.serverUrl, fetchPersonaDetails, fetchCoreMemoryPersona, fetchCurrentModel, fetchCurrentMemoryModel, fetchCurrentTimezone, fetchCustomModels, fetchMcpMarketplace, fetchUsers]);
 
   // Handle MCP search and filtering
   useEffect(() => {
@@ -1296,6 +1421,76 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
         </div>
 
         <div className="settings-section">
+          <h3>👥 User Selection</h3>
+          
+          <div className="setting-item">
+            <label htmlFor="user-selector">Current User</label>
+            <div className="user-selector-container">
+              <div className="user-selector-with-add">
+                <div 
+                  className={`user-selector-dropdown ${isUserDropdownOpen ? 'open' : ''}`}
+                  onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
+                >
+                  <div className="user-selector-current">
+                    {isLoadingUsers ? (
+                      <span className="loading-text">🔄 Loading users...</span>
+                    ) : currentUser ? (
+                      <span className="current-user-display">
+                        {currentUser.name}
+                      </span>
+                    ) : (
+                      <span className="no-user-selected">No user selected</span>
+                    )}
+                    <span className={`dropdown-arrow ${isUserDropdownOpen ? 'up' : 'down'}`}>
+                      {isUserDropdownOpen ? '▲' : '▼'}
+                    </span>
+                  </div>
+                  
+                  {isUserDropdownOpen && !isLoadingUsers && (
+                    <div className="user-dropdown-list">
+                      {users.length > 0 ? (
+                        users.map(user => (
+                          <div 
+                            key={user.id} 
+                            className={`user-dropdown-item ${currentUser?.id === user.id ? 'selected' : ''}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleUserSelection(user);
+                            }}
+                          >
+                            <div className="user-dropdown-info">
+                              <span className="user-dropdown-name">{user.name}</span>
+                            </div>
+                            {currentUser?.id === user.id && (
+                              <span className="selected-indicator">✓</span>
+                            )}
+                          </div>
+                        ))
+                      ) : (
+                        <div className="no-users-dropdown">No users available</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <button
+                  className="add-user-button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowAddUserModal(true);
+                  }}
+                  title="Add New User"
+                >
+                  + Add User
+                </button>
+              </div>
+            </div>
+            <span className="setting-description">
+              Select the current user context for the application.
+            </span>
+          </div>
+        </div>
+
+        <div className="settings-section">
           <h3>{t('settings.sections.about')}</h3>
           <div className="about-info">
             <p><strong>{t('settings.about.name')}</strong></p>
@@ -1389,6 +1584,51 @@ const SettingsPanel = ({ settings, onSettingsChange, onApiKeyCheck, onApiKeyRequ
                 disabled={!gmailCredentials.clientId.trim() || !gmailCredentials.clientSecret.trim()}
               >
                 Connect to Gmail
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add User Modal */}
+      {showAddUserModal && (
+        <div className="modal-overlay">
+          <div className="modal-content add-user-modal">
+            <div className="modal-header">
+              <h3>👤 Add New User</h3>
+              <button className="modal-close-btn" onClick={() => setShowAddUserModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <p className="add-user-description">
+                Create a new user account in the system.
+              </p>
+              
+              <div className="add-user-form">
+                <div className="form-group">
+                  <label htmlFor="new-user-name">User Name:</label>
+                  <input
+                    id="new-user-name"
+                    type="text"
+                    value={newUserName}
+                    onChange={(e) => setNewUserName(e.target.value)}
+                    placeholder="Enter user name"
+                    className="add-user-input"
+                    autoFocus
+                  />
+                </div>
+              </div>
+            </div>
+            
+            <div className="modal-footer">
+              <button className="modal-btn secondary" onClick={() => setShowAddUserModal(false)}>
+                Cancel
+              </button>
+              <button 
+                className="modal-btn primary" 
+                onClick={handleCreateUser}
+                disabled={!newUserName.trim()}
+              >
+                Create User
               </button>
             </div>
           </div>

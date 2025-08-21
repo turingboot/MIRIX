@@ -22,6 +22,33 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# User context switching utilities
+def switch_user_context(agent_wrapper, user_id: str):
+    """Switch agent's user context and manage user status"""
+    if agent_wrapper and agent_wrapper.client:
+        from mirix.schemas.user import User as PydanticUser
+        
+        # Set current user to inactive
+        if agent_wrapper.client.user:
+            current_user = agent_wrapper.client.user
+            agent_wrapper.client.server.user_manager.update_user_status(current_user.id, "inactive")
+        
+        # Get and set new user to active
+        user = agent_wrapper.client.server.user_manager.get_user_by_id(user_id)
+        agent_wrapper.client.server.user_manager.update_user_status(user_id, "active")
+        agent_wrapper.client.user = user
+        return user
+    return None
+
+def get_user_or_default(agent_wrapper, user_id: Optional[str] = None):
+    """Get user by ID or return current user"""
+    if user_id:
+        return agent_wrapper.client.server.user_manager.get_user_by_id(user_id)
+    elif agent_wrapper and agent_wrapper.client.user:
+        return agent_wrapper.client.user
+    else:
+        return agent_wrapper.client.server.user_manager.get_default_user()
+
 async def handle_gmail_connection(client_id: str, client_secret: str, server_name: str) -> bool:
     """
     Handle Gmail OAuth2 authentication and MCP connection
@@ -284,6 +311,7 @@ class PersonaDetailsResponse(BaseModel):
 
 class UpdatePersonaRequest(BaseModel):
     text: str
+    user_id: Optional[str] = None
 
 class UpdatePersonaResponse(BaseModel):
     success: bool
@@ -299,6 +327,7 @@ class UpdateCoreMemoryResponse(BaseModel):
 
 class ApplyPersonaTemplateRequest(BaseModel):
     persona_name: str
+    user_id: Optional[str] = None
 
 class CoreMemoryPersonaResponse(BaseModel):
     text: str
@@ -443,6 +472,7 @@ class ExportMemoriesRequest(BaseModel):
     file_path: str
     memory_types: List[str]
     include_embeddings: bool = False
+    user_id: Optional[str] = None
 
 class ExportMemoriesResponse(BaseModel):
     success: bool
@@ -502,7 +532,11 @@ async def send_message_endpoint(request: MessageRequest):
         )
     
     try:
-        print(f"Starting agent.send_message (non-streaming) with: message='{request.message}', memorizing={request.memorizing}")
+        # Handle user context switching if user_id is provided
+        if request.user_id:
+            switch_user_context(agent, request.user_id)
+        
+        print(f"Starting agent.send_message (non-streaming) with: message='{request.message}', memorizing={request.memorizing}, user_id={request.user_id}")
         
         # Run the blocking agent.send_message() in a background thread to avoid blocking other requests
         loop = asyncio.get_event_loop()
@@ -513,7 +547,8 @@ async def send_message_endpoint(request: MessageRequest):
                 image_uris=request.image_uris,
                 sources=request.sources,  # Pass sources to agent
                 voice_files=request.voice_files,  # Pass voice files to agent
-                memorizing=request.memorizing
+                memorizing=request.memorizing,
+                user_id=request.user_id
             )
         )
         
@@ -620,6 +655,11 @@ async def send_streaming_message_endpoint(request: MessageRequest):
             async def run_agent():
                 try:
                     
+                    # find the current active user
+                    users = agent.client.server.user_manager.list_users()
+                    active_user = next((user for user in users if user.status == 'active'), None)
+                    current_user_id = active_user.id if active_user else None
+
                     # Run agent.send_message in a background thread to avoid blocking
                     loop = asyncio.get_event_loop()
                     response = await loop.run_in_executor(
@@ -632,7 +672,8 @@ async def send_streaming_message_endpoint(request: MessageRequest):
                             memorizing=request.memorizing,
                             display_intermediate_message=display_intermediate_message,
                             request_user_confirmation=request_user_confirmation,
-                            is_screen_monitoring=request.is_screen_monitoring
+                            is_screen_monitoring=request.is_screen_monitoring,
+                            user_id=current_user_id
                         )
                     )
                     # Handle various response cases
@@ -752,12 +793,17 @@ async def send_streaming_message_endpoint(request: MessageRequest):
         raise HTTPException(status_code=500, detail=f"Streaming error: {str(e)}")
 
 @app.get("/personas", response_model=PersonaDetailsResponse)
-async def get_personas():
+async def get_personas(user_id: Optional[str] = None):
     """Get all personas with their details (name and text)"""
     if agent is None:
         raise HTTPException(status_code=500, detail="Agent not initialized")
     
     try:
+        # Find the current active user
+        users = agent.client.server.user_manager.list_users()
+        active_user = next((user for user in users if user.status == 'active'), None)
+        target_user = active_user if active_user else (users[0] if users else None)
+        
         persona_details = agent.get_persona_details()
         return PersonaDetailsResponse(personas=persona_details)
     except Exception as e:
@@ -771,6 +817,11 @@ async def update_persona(request: UpdatePersonaRequest):
         raise HTTPException(status_code=500, detail="Agent not initialized")
     
     try:
+        # Find the current active user
+        users = agent.client.server.user_manager.list_users()
+        active_user = next((user for user in users if user.status == 'active'), None)
+        target_user = active_user if active_user else (users[0] if users else None)
+        
         agent.update_core_memory_persona(request.text)
         return UpdatePersonaResponse(success=True, message="Core memory persona updated successfully")
     except Exception as e:
@@ -784,6 +835,11 @@ async def apply_persona_template(request: ApplyPersonaTemplateRequest):
         raise HTTPException(status_code=500, detail="Agent not initialized")
     
     try:
+        # Find the current active user
+        users = agent.client.server.user_manager.list_users()
+        active_user = next((user for user in users if user.status == 'active'), None)
+        target_user = active_user if active_user else (users[0] if users else None)
+        
         agent.apply_persona_template(request.persona_name)
         return UpdatePersonaResponse(success=True, message=f"Persona template '{request.persona_name}' applied successfully")
     except Exception as e:
@@ -803,12 +859,17 @@ async def update_core_memory(request: UpdateCoreMemoryRequest):
         return UpdateCoreMemoryResponse(success=False, message=f"Error updating core memory: {str(e)}")
 
 @app.get("/personas/core_memory", response_model=CoreMemoryPersonaResponse)
-async def get_core_memory_persona():
+async def get_core_memory_persona(user_id: Optional[str] = None):
     """Get the core memory persona text"""
     if agent is None:
         raise HTTPException(status_code=500, detail="Agent not initialized")
     
     try:
+        # Find the current active user
+        users = agent.client.server.user_manager.list_users()
+        active_user = next((user for user in users if user.status == 'active'), None)
+        target_user = active_user if active_user else (users[0] if users else None)
+        
         persona_text = agent.get_core_memory_persona()
         return CoreMemoryPersonaResponse(text=persona_text)
     except Exception as e:
@@ -1012,7 +1073,15 @@ async def get_current_timezone():
         raise HTTPException(status_code=500, detail="Agent not initialized")
     
     try:
-        current_timezone = agent.client.server.user_manager.get_user_by_id(agent.client.user.id).timezone
+        # Find the current active user
+        users = agent.client.server.user_manager.list_users()
+        active_user = next((user for user in users if user.status == 'active'), None)
+        target_user = active_user if active_user else (users[0] if users else None)
+        
+        if not target_user:
+            raise HTTPException(status_code=404, detail="No user found")
+            
+        current_timezone = target_user.timezone
         return GetTimezoneResponse(timezone=current_timezone)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting current timezone: {str(e)}")
@@ -1025,8 +1094,18 @@ async def set_timezone(request: SetTimezoneRequest):
         raise HTTPException(status_code=500, detail="Agent not initialized")
     
     try:
-        agent.set_timezone(request.timezone)
-        return SetTimezoneResponse(success=True, message=f"Timezone '{request.timezone}' set successfully")
+        # Find the current active user
+        users = agent.client.server.user_manager.list_users()
+        active_user = next((user for user in users if user.status == 'active'), None)
+        target_user = active_user if active_user else (users[0] if users else None)
+        
+        if not target_user:
+            return SetTimezoneResponse(success=False, message="No user found")
+        
+        # Update the timezone for the active user
+        agent.client.server.user_manager.update_user_timezone(user_id=target_user.id, timezone_str=request.timezone)
+        
+        return SetTimezoneResponse(success=True, message=f"Timezone '{request.timezone}' set successfully for user {target_user.name}")
     except Exception as e:
         return SetTimezoneResponse(success=False, message=f"Error setting timezone: {str(e)}")
 
@@ -1168,12 +1247,17 @@ def _save_api_key_to_env_file(key_name: str, api_key: str):
 
 # Memory endpoints
 @app.get("/memory/episodic")
-async def get_episodic_memory():
+async def get_episodic_memory(user_id: Optional[str] = None):
     """Get episodic memory (past events)"""
     if agent is None:
         raise HTTPException(status_code=500, detail="Agent not initialized")
     
     try:
+        # Find the current active user
+        users = agent.client.server.user_manager.list_users()
+        active_user = next((user for user in users if user.status == 'active'), None)
+        target_user = active_user if active_user else (users[0] if users else None)
+        
         # Access the episodic memory manager through the client
         client = agent.client
         episodic_manager = client.server.episodic_memory_manager
@@ -1181,12 +1265,12 @@ async def get_episodic_memory():
         # Get episodic events using the correct method name
         events = episodic_manager.list_episodic_memory(
             agent_state=agent.agent_states.episodic_memory_agent_state,
+            actor=target_user,
             limit=50,
-            timezone_str=agent.client.server.user_manager.get_user_by_id(agent.client.user.id).timezone
+            timezone_str=target_user.timezone
         )
         
         # Transform to frontend format
-
         episodic_items = []
         for event in events:
             episodic_items.append({
@@ -1196,7 +1280,7 @@ async def get_episodic_memory():
                 "event_type": event.event_type,
                 "tree_path": event.tree_path if hasattr(event, 'tree_path') else [],
             })
-
+            
         return episodic_items
         
     except Exception as e:
@@ -1205,12 +1289,17 @@ async def get_episodic_memory():
         return []
 
 @app.get("/memory/semantic")
-async def get_semantic_memory():
+async def get_semantic_memory(user_id: Optional[str] = None):
     """Get semantic memory (knowledge)"""
     if agent is None:
         raise HTTPException(status_code=500, detail="Agent not initialized")
     
     try:
+        # Find the current active user
+        users = agent.client.server.user_manager.list_users()
+        active_user = next((user for user in users if user.status == 'active'), None)
+        target_user = active_user if active_user else (users[0] if users else None)
+            
         client = agent.client
         semantic_items_list = []
         
@@ -1219,8 +1308,9 @@ async def get_semantic_memory():
             semantic_manager = client.server.semantic_memory_manager
             semantic_items = semantic_manager.list_semantic_items(
                 agent_state=agent.agent_states.semantic_memory_agent_state,
+                actor=target_user,
                 limit=50,
-                timezone_str=agent.client.server.user_manager.get_user_by_id(agent.client.user.id).timezone
+                timezone_str=target_user.timezone
             )
             
             for item in semantic_items:
@@ -1241,12 +1331,17 @@ async def get_semantic_memory():
         return []
 
 @app.get("/memory/procedural")
-async def get_procedural_memory():
+async def get_procedural_memory(user_id: Optional[str] = None):
     """Get procedural memory (skills and procedures)"""
     if agent is None:
         raise HTTPException(status_code=500, detail="Agent not initialized")
     
     try:
+        # Find the current active user
+        users = agent.client.server.user_manager.list_users()
+        active_user = next((user for user in users if user.status == 'active'), None)
+        target_user = active_user if active_user else (users[0] if users else None)
+            
         client = agent.client
         procedural_items_list = []
         
@@ -1255,8 +1350,9 @@ async def get_procedural_memory():
             procedural_manager = client.server.procedural_memory_manager
             procedural_items = procedural_manager.list_procedures(
                 agent_state=agent.agent_states.procedural_memory_agent_state,
+                actor=target_user,
                 limit=50,
-                timezone_str=agent.client.server.user_manager.get_user_by_id(agent.client.user.id).timezone
+                timezone_str=target_user.timezone
             )
 
             for item in procedural_items:
@@ -1293,20 +1389,26 @@ async def get_procedural_memory():
         return []
 
 @app.get("/memory/resources")
-async def get_resource_memory():
+async def get_resource_memory(user_id: Optional[str] = None):
     """Get resource memory (docs and files)"""
     if agent is None:
         raise HTTPException(status_code=500, detail="Agent not initialized")
     
     try:
+        # Find the current active user
+        users = agent.client.server.user_manager.list_users()
+        active_user = next((user for user in users if user.status == 'active'), None)
+        target_user = active_user if active_user else (users[0] if users else None)
+        
         client = agent.client
         resource_manager = client.server.resource_memory_manager
         
         # Get resource memory items using correct method name
         resources = resource_manager.list_resources(
             agent_state=agent.agent_states.resource_memory_agent_state,
+            actor=target_user,
             limit=50,
-            timezone_str=agent.client.server.user_manager.get_user_by_id(agent.client.user.id).timezone
+            timezone_str=target_user.timezone
         )
         
         # Transform to frontend format
@@ -1375,6 +1477,7 @@ async def get_credentials_memory():
         
         # Get knowledge vault items using correct method name
         vault_items = knowledge_vault_manager.list_knowledge(
+            actor=agent.client.user,
             agent_state=agent.agent_states.knowledge_vault_agent_state,
             limit=50,
             timezone_str=agent.client.server.user_manager.get_user_by_id(agent.client.user.id).timezone
@@ -1398,30 +1501,36 @@ async def get_credentials_memory():
         return []
 
 @app.post("/conversation/clear", response_model=ClearConversationResponse)
-async def clear_conversation_history():
+async def clear_conversation_history(user_id: Optional[str] = None):
     """Permanently clear all conversation history for the current agent (memories are preserved)"""
     try:
         if agent is None:
             raise HTTPException(status_code=400, detail="Agent not initialized")
         
-        # Get current message count for reporting
+        # Find the current active user
+        users = agent.client.server.user_manager.list_users()
+        active_user = next((user for user in users if user.status == 'active'), None)
+        target_user = active_user if active_user else (users[0] if users else None)
+        
+        # Get current message count for this specific actor for reporting
         current_messages = agent.client.server.agent_manager.get_in_context_messages(
             agent_id=agent.agent_states.agent_state.id,
-            actor=agent.client.user
+            actor=target_user
         )
-        messages_count = len(current_messages)
+        # Count messages belonging to this actor (excluding system messages)
+        actor_messages_count = len([msg for msg in current_messages if msg.role != 'system' and msg.user_id == target_user.id])
         
         # Clear conversation history using the agent manager reset_messages method
         agent.client.server.agent_manager.reset_messages(
             agent_id=agent.agent_states.agent_state.id,
-            actor=agent.client.user,
+            actor=target_user,
             add_default_initial_messages=True  # Keep system message and initial setup
         )
         
         return ClearConversationResponse(
             success=True,
-            message=f"Successfully cleared conversation history. All user and assistant messages removed (system messages preserved).",
-            messages_deleted=messages_count
+            message=f"Successfully cleared conversation history for {target_user.name}. Messages from other users and system messages preserved.",
+            messages_deleted=actor_messages_count
         )
         
     except Exception as e:
@@ -1436,7 +1545,12 @@ async def export_memories(request: ExportMemoriesRequest):
         raise HTTPException(status_code=500, detail="Agent not initialized")
     
     try:
+        # Find the current active user
+        users = agent.client.server.user_manager.list_users()
+        active_user = next((user for user in users if user.status == 'active'), None)
+        target_user = active_user if active_user else (users[0] if users else None)
         result = agent.export_memories_to_excel(
+            actor=target_user,
             file_path=request.file_path,
             memory_types=request.memory_types,
             include_embeddings=request.include_embeddings
@@ -1765,6 +1879,90 @@ async def respond_to_confirmation(request: ConfirmationRequest):
         return {"success": True, "message": "Confirmation received"}
     else:
         return {"success": False, "message": "Confirmation ID not found or expired"}
+
+@app.get("/users")
+async def get_all_users():
+    """Get all users in the system"""
+    if agent is None:
+        raise HTTPException(status_code=500, detail="Agent not initialized")
+    
+    try:
+        users = agent.client.server.user_manager.list_users()
+        return {"users": [user.model_dump() for user in users]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving users: {str(e)}")
+
+class SwitchUserRequest(BaseModel):
+    user_id: str
+
+class SwitchUserResponse(BaseModel):
+    success: bool
+    message: str
+    user: Optional[Dict[str, Any]] = None
+
+@app.post("/users/switch", response_model=SwitchUserResponse)
+async def switch_user(request: SwitchUserRequest):
+    """Switch the active user"""
+    if agent is None:
+        raise HTTPException(status_code=500, detail="Agent not initialized")
+    
+    try:
+        # Use the existing switch_user_context function
+        switch_user_context(agent, request.user_id)
+        
+        # Get the switched user details
+        current_user = agent.client.user
+        if current_user:
+            return SwitchUserResponse(
+                success=True,
+                message=f"Successfully switched to user: {current_user.name}",
+                user=current_user.model_dump()
+            )
+        else:
+            return SwitchUserResponse(
+                success=False,
+                message="Failed to switch user - user not found"
+            )
+            
+    except Exception as e:
+        return SwitchUserResponse(
+            success=False,
+            message=f"Error switching user: {str(e)}"
+        )
+
+class CreateUserRequest(BaseModel):
+    name: str
+    set_as_active: bool = True  # Whether to set this user as active when created
+
+class CreateUserResponse(BaseModel):
+    success: bool
+    message: str
+    user: Optional[Dict[str, Any]] = None
+
+@app.post("/users/create", response_model=CreateUserResponse)
+async def create_user(request: CreateUserRequest):
+    """Create a new user in the system"""
+    if agent is None:
+        raise HTTPException(status_code=500, detail="Agent not initialized")
+    
+    try:
+        # Use the AgentWrapper's create_user method
+        result = agent.create_user(
+            name=request.name,
+            set_as_active=request.set_as_active
+        )
+        
+        return CreateUserResponse(
+            success=result['success'],
+            message=result['message'],
+            user=result['user'].model_dump()
+        )
+        
+    except Exception as e:
+        return CreateUserResponse(
+            success=False,
+            message=f"Error creating user: {str(e)}"
+        )
 
 if __name__ == "__main__":
     import uvicorn

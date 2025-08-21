@@ -24,6 +24,7 @@ class SemanticMemoryItem(SemanticMemoryItemBase):
     Full semantic memory item schema, including database-related fields.
     """
     id: Optional[str] = Field(None, description="Unique identifier for the semantic memory item")
+    user_id: str = Field(..., description="The id of the user who generated the semantic memory")
     created_at: datetime = Field(default_factory=get_utc_time, description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
     last_modify: Dict[str, Any] = Field(
@@ -59,6 +60,7 @@ class SemanticMemoryItemUpdate(MirixBase):
     summary: Optional[str] = Field(None, description="A concise explanation or summary of the concept")
     details: Optional[str] = Field(None, description="Detailed explanation or additional context for the concept")
     source: Optional[str] = Field(None, description="Reference or origin of this information (e.g., book, article, movie)")
+    actor: Optional[str] = Field(None, description="The actor who generated the semantic memory (user or assistant)")
     tree_path: Optional[List[str]] = Field(
         None, 
         description="Hierarchical categorization path as an array of strings (e.g., ['favorites', 'pets', 'dog'])"

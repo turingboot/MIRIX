@@ -40,6 +40,8 @@ class EpisodicEvent(EpisodicEventBase):
     """
     id: Optional[str] = Field(None, description="Unique identifier for the episodic event")
 
+    user_id: str = Field(..., description="The id of the user who generated the episodic event")
+
     occurred_at: datetime = Field(
         default_factory=get_utc_time,
         description="When the event actually happened (recorded or user-labeled)."

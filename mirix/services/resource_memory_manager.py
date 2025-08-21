@@ -129,7 +129,7 @@ class ResourceMemoryManager:
             print(f"Warning: Failed to parse embedding field: {e}")
             return None
 
-    def _postgresql_fulltext_search(self, session, base_query, query_text, search_field, limit):
+    def _postgresql_fulltext_search(self, session, base_query, query_text, search_field, limit, actor):
         """
         Efficient PostgreSQL-native full-text search using ts_rank_cd for BM25-like functionality.
         This method leverages PostgreSQL's built-in full-text search capabilities and GIN indexes.
@@ -210,16 +210,18 @@ class ResourceMemoryManager:
             and_query_sql = text(f"""
                 SELECT 
                     id, title, summary, content, tree_path, summary_embedding, embedding_config,
-                    created_at, resource_type, organization_id, metadata_, last_modify,
+                    created_at, resource_type, organization_id, metadata_, last_modify, user_id,
                     {rank_sql} as rank_score
                 FROM resource_memory 
                 WHERE {tsvector_sql} @@ to_tsquery('english', :tsquery)
+                    AND user_id = :user_id
                 ORDER BY rank_score DESC, created_at DESC
                 LIMIT :limit_val
             """)
             
             results = list(session.execute(and_query_sql, {
                 'tsquery': tsquery_string_and,
+                'user_id': actor.id,
                 'limit_val': limit or 50
             }))
             
@@ -258,16 +260,18 @@ class ResourceMemoryManager:
             or_query_sql = text(f"""
                 SELECT 
                     id, title, summary, content, tree_path, summary_embedding, embedding_config,
-                    created_at, resource_type, organization_id, metadata_, last_modify,
+                    created_at, resource_type, organization_id, metadata_, last_modify, user_id,
                     {rank_sql} as rank_score
                 FROM resource_memory 
                 WHERE {tsvector_sql} @@ to_tsquery('english', :tsquery)
+                    AND user_id = :user_id
                 ORDER BY rank_score DESC, created_at DESC
                 LIMIT :limit_val
             """)
             
             results = session.execute(or_query_sql, {
                 'tsquery': tsquery_string_or,
+                'user_id': actor.id,
                 'limit_val': limit or 50
             })
             
@@ -325,21 +329,20 @@ class ResourceMemoryManager:
 
     @update_timezone
     @enforce_types
-    def get_most_recently_updated_item(self, organization_id: Optional[str] = None, timezone_str: str = None) -> Optional[PydanticResourceMemoryItem]:
+    def get_most_recently_updated_item(self, actor: PydanticUser, timezone_str: str = None) -> Optional[PydanticResourceMemoryItem]:
         """
         Fetch the most recently updated resource memory item based on last_modify timestamp.
-        Optionally filter by organization_id.
+        Filter by user_id from actor.
         Returns None if no items exist.
         """
         with self.session_maker() as session:
             # Use proper PostgreSQL JSON text extraction and casting for ordering
             from sqlalchemy import cast, DateTime, text
-            query = select(ResourceMemoryItem).order_by(
+            query = select(ResourceMemoryItem).where(
+                ResourceMemoryItem.user_id == actor.id
+            ).order_by(
                 cast(text("resource_memory.last_modify ->> 'timestamp'"), DateTime).desc()
             )
-            
-            if organization_id:
-                query = query.where(ResourceMemoryItem.organization_id == organization_id)
             
             result = session.execute(query.limit(1))
             item = result.scalar_one_or_none()
@@ -347,7 +350,7 @@ class ResourceMemoryManager:
             return [item.to_pydantic()] if item else None
 
     @enforce_types
-    def create_item(self, item_data: PydanticResourceMemoryItem) -> PydanticResourceMemoryItem:
+    def create_item(self, item_data: PydanticResourceMemoryItem, actor: PydanticUser) -> PydanticResourceMemoryItem:
         """Create a new resource memory item."""
         
         # Ensure ID is set before model_dump
@@ -364,6 +367,9 @@ class ResourceMemoryManager:
                 raise ValueError(f"Required field '{field}' missing from resource memory data")
 
         data_dict.setdefault("metadata_", {})
+        
+        # Set user_id from actor for multi-user support
+        data_dict["user_id"] = actor.id
 
         with self.session_maker() as session:
             item = ResourceMemoryItem(**data_dict)
@@ -388,10 +394,12 @@ class ResourceMemoryManager:
         """Create multiple resource memory items."""
         return [self.create_item(i, actor) for i in items]
 
-    def get_total_number_of_items(self) -> int:
-        """Get the total number of items in the resource memory."""
+    def get_total_number_of_items(self, actor: PydanticUser) -> int:
+        """Get the total number of items in the resource memory for the user."""
         with self.session_maker() as session:
-            query = select(func.count(ResourceMemoryItem.id))
+            query = select(func.count(ResourceMemoryItem.id)).where(
+                ResourceMemoryItem.user_id == actor.id
+            )
             result = session.execute(query)
             return result.scalar_one()
 
@@ -399,6 +407,7 @@ class ResourceMemoryManager:
     @enforce_types
     def list_resources(self,
                        agent_state: AgentState,
+                       actor: PydanticUser,
                        query: str = '',
                        embedded_text: Optional[List[float]] = None,
                        search_field: str = 'content',
@@ -443,7 +452,9 @@ class ResourceMemoryManager:
             if query == '':
                 # Use proper PostgreSQL JSON text extraction and casting for ordering
                 from sqlalchemy import cast, DateTime, text
-                query_stmt = select(ResourceMemoryItem).order_by(
+                query_stmt = select(ResourceMemoryItem).where(
+                    ResourceMemoryItem.user_id == actor.id
+                ).order_by(
                     cast(text("resource_memory.last_modify ->> 'timestamp'"), DateTime).desc()
                 )
                 if limit:
@@ -465,6 +476,9 @@ class ResourceMemoryManager:
                 ResourceMemoryItem.metadata_.label("metadata_"),
                 ResourceMemoryItem.last_modify.label("last_modify"),
                 ResourceMemoryItem.tree_path.label("tree_path"),
+                ResourceMemoryItem.user_id.label("user_id"),
+            ).where(
+                ResourceMemoryItem.user_id == actor.id
             )
 
             if search_method == 'string_match':
@@ -490,12 +504,14 @@ class ResourceMemoryManager:
                 if settings.mirix_pg_uri_no_default:
                     # Use PostgreSQL native full-text search
                     return self._postgresql_fulltext_search(
-                        session, base_query, query, search_field, limit
+                        session, base_query, query, search_field, limit, actor
                     )
                 else:
                     # Fallback to in-memory BM25 for SQLite (legacy method)
                     # Load all candidate items (memory-intensive, kept for compatibility)
-                    result = session.execute(select(ResourceMemoryItem))
+                    result = session.execute(select(ResourceMemoryItem).where(
+                        ResourceMemoryItem.user_id == actor.id
+                    ))
                     all_items = result.scalars().all()
                     
                     if not all_items:
@@ -567,6 +583,7 @@ class ResourceMemoryManager:
 
     @enforce_types
     def insert_resource(self, 
+                        actor: PydanticUser,
                         agent_state: AgentState,
                         title: str,
                         summary: str,
@@ -589,6 +606,7 @@ class ResourceMemoryManager:
 
             resource = self.create_item(
                 item_data=PydanticResourceMemoryItem(
+                    user_id=actor.id,
                     title=title,
                     summary=summary,
                     content=content,
@@ -597,7 +615,8 @@ class ResourceMemoryManager:
                     organization_id=organization_id,
                     summary_embedding=summary_embedding,
                     embedding_config=embedding_config,
-                )
+                ),
+                actor=actor
             )
             return resource
         
@@ -605,11 +624,11 @@ class ResourceMemoryManager:
             raise e     
 
     @enforce_types
-    def delete_resource_by_id(self, resource_id: str) -> None:
+    def delete_resource_by_id(self, resource_id: str, actor: PydanticUser) -> None:
         """Delete a resource memory item by ID."""
         with self.session_maker() as session:
             try:
-                item = ResourceMemoryItem.read(db_session=session, identifier=resource_id)
+                item = ResourceMemoryItem.read(db_session=session, identifier=resource_id, actor=actor)
                 item.hard_delete(session)
             except NoResultFound:
                 raise NoResultFound(f"Resource Memory record with id {resource_id} not found.")

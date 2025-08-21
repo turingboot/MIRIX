@@ -37,7 +37,7 @@ class UserManager:
                 user = UserModel.read(db_session=session, identifier=self.DEFAULT_USER_ID)
             except NoResultFound:
                 # If it doesn't exist, make it
-                user = UserModel(id=self.DEFAULT_USER_ID, name=self.DEFAULT_USER_NAME, timezone=self.DEFAULT_TIME_ZONE, organization_id=org_id)
+                user = UserModel(id=self.DEFAULT_USER_ID, name=self.DEFAULT_USER_NAME, status="active", timezone=self.DEFAULT_TIME_ZONE, organization_id=org_id)
                 user.create(session)
 
             return user.to_pydantic()
@@ -75,6 +75,20 @@ class UserManager:
 
             # Update the timezone
             existing_user.timezone = timezone_str
+
+            # Commit the updated user
+            existing_user.update(session)
+            return existing_user.to_pydantic()
+
+    @enforce_types
+    def update_user_status(self, user_id: str, status: str) -> PydanticUser:
+        """Update the status of a user."""
+        with self.session_maker() as session:
+            # Retrieve the existing user by ID
+            existing_user = UserModel.read(db_session=session, identifier=user_id)
+
+            # Update the status
+            existing_user.status = status
 
             # Commit the updated user
             existing_user.update(session)

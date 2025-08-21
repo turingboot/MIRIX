@@ -178,7 +178,7 @@ class KnowledgeVaultManager:
         
         return word_matches
 
-    def _postgresql_fulltext_search(self, session, base_query, query_text, search_field, limit, sensitivity=None):
+    def _postgresql_fulltext_search(self, session, base_query, query_text, search_field, limit, sensitivity=None, actor=None):
         """
         Efficient PostgreSQL-native full-text search using ts_rank_cd for BM25-like functionality.
         This method leverages PostgreSQL's built-in full-text search capabilities and GIN indexes.
@@ -257,16 +257,18 @@ class KnowledgeVaultManager:
                 SELECT 
                     id, created_at, entry_type, source, sensitivity,
                     secret_value, caption, caption_embedding, embedding_config,
-                    organization_id, metadata_, last_modify,
+                    organization_id, metadata_, last_modify, user_id,
                     {rank_sql} as rank_score
                 FROM knowledge_vault 
-                WHERE {tsvector_sql} @@ to_tsquery('english', :tsquery){sensitivity_filter}
+                WHERE {tsvector_sql} @@ to_tsquery('english', :tsquery)
+                    AND user_id = :user_id{sensitivity_filter}
                 ORDER BY rank_score DESC, created_at DESC
                 LIMIT :limit_val
             """)
             
             query_params = {
                 'tsquery': tsquery_string_and,
+                'user_id': actor.id,
                 'limit_val': limit or 50
             }
             if sensitivity is not None:
@@ -310,16 +312,18 @@ class KnowledgeVaultManager:
                 SELECT 
                     id, created_at, entry_type, source, sensitivity,
                     secret_value, caption, caption_embedding, embedding_config,
-                    organization_id, metadata_, last_modify,
+                    organization_id, metadata_, last_modify, user_id,
                     {rank_sql} as rank_score
                 FROM knowledge_vault 
-                WHERE {tsvector_sql} @@ to_tsquery('english', :tsquery){sensitivity_filter}
+                WHERE {tsvector_sql} @@ to_tsquery('english', :tsquery)
+                    AND user_id = :user_id{sensitivity_filter}
                 ORDER BY rank_score DESC, created_at DESC
                 LIMIT :limit_val
             """)
             
             query_params = {
                 'tsquery': tsquery_string_or,
+                'user_id': actor.id,
                 'limit_val': limit or 50
             }
             if sensitivity is not None:
@@ -359,6 +363,8 @@ class KnowledgeVaultManager:
             fallback_field = getattr(KnowledgeVaultItem, search_field) if search_field and hasattr(KnowledgeVaultItem, search_field) else KnowledgeVaultItem.caption
             fallback_query = select(KnowledgeVaultItem).where(
                 func.lower(fallback_field).contains(query_text.lower())
+            ).where(
+                KnowledgeVaultItem.user_id == actor.id
             )
             
             # Add sensitivity filter to fallback query if provided
@@ -387,10 +393,10 @@ class KnowledgeVaultManager:
 
     @update_timezone
     @enforce_types
-    def get_most_recently_updated_item(self, organization_id: Optional[str] = None, timezone_str: str = None) -> Optional[PydanticKnowledgeVaultItem]:
+    def get_most_recently_updated_item(self, actor: PydanticUser, timezone_str: str = None) -> Optional[PydanticKnowledgeVaultItem]:
         """
         Fetch the most recently updated knowledge vault item based on last_modify timestamp.
-        Optionally filter by organization_id.
+        Filter by user_id from actor.
         Returns None if no items exist.
         """
         with self.session_maker() as session:
@@ -400,8 +406,8 @@ class KnowledgeVaultManager:
                 cast(text("knowledge_vault.last_modify ->> 'timestamp'"), DateTime).desc()
             )
             
-            if organization_id:
-                query = query.where(KnowledgeVaultItem.organization_id == organization_id)
+            # Filter by user_id for multi-user support
+            query = query.where(KnowledgeVaultItem.user_id == actor.id)
             
             result = session.execute(query.limit(1))
             item = result.scalar_one_or_none()
@@ -409,7 +415,7 @@ class KnowledgeVaultManager:
             return [item.to_pydantic()] if item else None
 
     @enforce_types
-    def create_item(self, knowledge_vault_item: PydanticKnowledgeVaultItem) -> PydanticKnowledgeVaultItem:
+    def create_item(self, knowledge_vault_item: PydanticKnowledgeVaultItem, actor: PydanticUser) -> PydanticKnowledgeVaultItem:
         """Create a new knowledge vault item."""
         
         # Ensure ID is set before model_dump
@@ -427,6 +433,9 @@ class KnowledgeVaultManager:
         
         item_data.setdefault("metadata_", {})
         
+        # Set user_id from actor for multi-user support
+        item_data["user_id"] = actor.id
+        
         # Create the knowledge vault item
         with self.session_maker() as session:
             knowledge_item = KnowledgeVaultItem(**item_data)
@@ -442,6 +451,7 @@ class KnowledgeVaultManager:
     
     @enforce_types
     def insert_knowledge(self, 
+                         actor: PydanticUser,
                          agent_state: AgentState,
                          entry_type: str,
                          source: str,
@@ -463,6 +473,7 @@ class KnowledgeVaultManager:
 
             knowledge = self.create_item(
                 PydanticKnowledgeVaultItem(
+                    user_id=actor.id,
                     entry_type=entry_type,
                     source=source,
                     caption=caption,
@@ -471,17 +482,20 @@ class KnowledgeVaultManager:
                     organization_id=organization_id,
                     caption_embedding=caption_embedding,
                     embedding_config=embedding_config,
-                )
+                ),
+                actor=actor
             )
             return knowledge
 
         except Exception as e:
             raise e
 
-    def get_total_number_of_items(self) -> int:
-        """Get the total number of items in the knowledge vault."""
+    def get_total_number_of_items(self, actor: PydanticUser) -> int:
+        """Get the total number of items in the knowledge vault for the user."""
         with self.session_maker() as session:
-            query = select(func.count(KnowledgeVaultItem.id))
+            query = select(func.count(KnowledgeVaultItem.id)).where(
+                KnowledgeVaultItem.user_id == actor.id
+            )
             result = session.execute(query)
             return result.scalar_one()
 
@@ -489,6 +503,7 @@ class KnowledgeVaultManager:
     @enforce_types
     def list_knowledge(self,
                        agent_state: AgentState,
+                       actor: PydanticUser,
                        query: str = '',
                        embedded_text: Optional[List[float]] = None,
                        search_field: str = '',
@@ -534,7 +549,9 @@ class KnowledgeVaultManager:
             if query == '':
                 # Use proper PostgreSQL JSON text extraction and casting for ordering
                 from sqlalchemy import cast, DateTime, text
-                query_stmt = select(KnowledgeVaultItem).order_by(
+                query_stmt = select(KnowledgeVaultItem).where(
+                    KnowledgeVaultItem.user_id == actor.id
+                ).order_by(
                     cast(text("knowledge_vault.last_modify ->> 'timestamp'"), DateTime).desc()
                 )
                 # Add sensitivity filter if provided
@@ -559,6 +576,9 @@ class KnowledgeVaultManager:
                     KnowledgeVaultItem.metadata_.label("metadata_"),
                     KnowledgeVaultItem.organization_id.label("organization_id"),
                     KnowledgeVaultItem.last_modify.label("last_modify"),
+                    KnowledgeVaultItem.user_id.label("user_id"),
+                ).where(
+                    KnowledgeVaultItem.user_id == actor.id
                 )
 
                 # Add sensitivity filter to base query if provided
@@ -590,12 +610,14 @@ class KnowledgeVaultManager:
                     if settings.mirix_pg_uri_no_default:
                         # Use PostgreSQL native full-text search
                         return self._postgresql_fulltext_search(
-                            session, base_query, query, search_field, limit, sensitivity
+                            session, base_query, query, search_field, limit, sensitivity, actor
                         )
                     else:
                         # Fallback to in-memory BM25 for SQLite (legacy method)
                         # Load all candidate items (memory-intensive, kept for compatibility)
-                        fuzzy_query = select(KnowledgeVaultItem)
+                        fuzzy_query = select(KnowledgeVaultItem).where(
+                            KnowledgeVaultItem.user_id == actor.id
+                        )
                         
                         # Add sensitivity filter if provided
                         if sensitivity is not None:
@@ -658,7 +680,9 @@ class KnowledgeVaultManager:
                 elif search_method == 'fuzzy_match':
                     # Fuzzy matching: load all candidate items into memory,
                     # then compute fuzzy matching score using RapidFuzz.
-                    fuzzy_query = select(KnowledgeVaultItem)
+                    fuzzy_query = select(KnowledgeVaultItem).where(
+                        KnowledgeVaultItem.user_id == actor.id
+                    )
                     
                     # Add sensitivity filter if provided
                     if sensitivity is not None:
@@ -698,11 +722,11 @@ class KnowledgeVaultManager:
                 return [item.to_pydantic() for item in knowledge_vault]
 
     @enforce_types
-    def delete_knowledge_by_id(self, knowledge_vault_item_id: str) -> None:
+    def delete_knowledge_by_id(self, knowledge_vault_item_id: str, actor: PydanticUser) -> None:
         """Delete a knowledge vault item by ID."""
         with self.session_maker() as session:
             try:
-                item = KnowledgeVaultItem.read(db_session=session, identifier=knowledge_vault_item_id)
+                item = KnowledgeVaultItem.read(db_session=session, identifier=knowledge_vault_item_id, actor=actor)
                 item.hard_delete(session)
             except NoResultFound:
                 raise NoResultFound(f"Knowledge vault item with id {knowledge_vault_item_id} not found.")

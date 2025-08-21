@@ -183,7 +183,7 @@ class SemanticMemoryManager:
         
         return word_matches
 
-    def _postgresql_fulltext_search(self, session, base_query, query_text, search_field, limit):
+    def _postgresql_fulltext_search(self, session, base_query, query_text, search_field, limit, actor):
         """
         Efficient PostgreSQL-native full-text search using ts_rank_cd for BM25-like functionality.
         This method leverages PostgreSQL's built-in full-text search capabilities and GIN indexes.
@@ -265,16 +265,18 @@ class SemanticMemoryManager:
                 SELECT 
                     id, created_at, name, summary, details, source, tree_path,
                     name_embedding, summary_embedding, details_embedding, embedding_config,
-                    organization_id, metadata_, last_modify,
+                    organization_id, metadata_, last_modify, user_id,
                     {rank_sql} as rank_score
                 FROM semantic_memory 
                 WHERE {tsvector_sql} @@ to_tsquery('english', :tsquery)
+                    AND user_id = :user_id
                 ORDER BY rank_score DESC, created_at DESC
                 LIMIT :limit_val
             """)
             
             results = list(session.execute(and_query_sql, {
                 'tsquery': tsquery_string_and,
+                'user_id': actor.id,
                 'limit_val': limit or 50
             }))
             
@@ -314,16 +316,18 @@ class SemanticMemoryManager:
                 SELECT 
                     id, created_at, name, summary, details, source, tree_path,
                     name_embedding, summary_embedding, details_embedding, embedding_config,
-                    organization_id, metadata_, last_modify,
+                    organization_id, metadata_, last_modify, user_id,
                     {rank_sql} as rank_score
                 FROM semantic_memory 
                 WHERE {tsvector_sql} @@ to_tsquery('english', :tsquery)
+                    AND user_id = :user_id
                 ORDER BY rank_score DESC, created_at DESC
                 LIMIT :limit_val
             """)
             
             results = session.execute(or_query_sql, {
                 'tsquery': tsquery_string_or,
+                'user_id': actor.id,
                 'limit_val': limit or 50
             })
             
@@ -370,21 +374,21 @@ class SemanticMemoryManager:
 
     @update_timezone
     @enforce_types
-    def get_semantic_item_by_id(self, semantic_memory_id: str, timezone_str: str) -> Optional[PydanticSemanticMemoryItem]:
+    def get_semantic_item_by_id(self, semantic_memory_id: str, actor: PydanticUser, timezone_str: str) -> Optional[PydanticSemanticMemoryItem]:
         """Fetch a semantic memory item by ID."""
         with self.session_maker() as session:
             try:
-                semantic_memory_item = SemanticMemoryItem.read(db_session=session, identifier=semantic_memory_id)
+                semantic_memory_item = SemanticMemoryItem.read(db_session=session, identifier=semantic_memory_id, actor=actor)
                 return semantic_memory_item.to_pydantic()
             except NoResultFound:
                 raise NoResultFound(f"Semantic memory item with id {semantic_memory_id} not found.")
 
     @update_timezone
     @enforce_types
-    def get_most_recently_updated_item(self, organization_id: Optional[str] = None, timezone_str: str = None) -> Optional[PydanticSemanticMemoryItem]:
+    def get_most_recently_updated_item(self, actor: PydanticUser, timezone_str: str = None) -> Optional[PydanticSemanticMemoryItem]:
         """
         Fetch the most recently updated semantic memory item based on last_modify timestamp.
-        Optionally filter by organization_id.
+        Filter by user_id from actor.
         Returns None if no items exist.
         """
         with self.session_maker() as session:
@@ -394,8 +398,8 @@ class SemanticMemoryManager:
                 cast(text("semantic_memory.last_modify ->> 'timestamp'"), DateTime).desc()
             )
             
-            if organization_id:
-                query = query.where(SemanticMemoryItem.organization_id == organization_id)
+            # Filter by user_id for multi-user support
+            query = query.where(SemanticMemoryItem.user_id == actor.id)
             
             result = session.execute(query.limit(1))
             item = result.scalar_one_or_none()
@@ -403,7 +407,7 @@ class SemanticMemoryManager:
             return [item.to_pydantic()] if item else None
 
     @enforce_types
-    def create_item(self, item_data: PydanticSemanticMemoryItem) -> PydanticSemanticMemoryItem:
+    def create_item(self, item_data: PydanticSemanticMemoryItem, actor: PydanticUser) -> PydanticSemanticMemoryItem:
         """Create a new semantic memory item."""
         
         # Ensure ID is set before model_dump
@@ -419,6 +423,9 @@ class SemanticMemoryManager:
                 raise ValueError(f"Required field '{field}' missing from semantic memory data")
         
         data_dict.setdefault("metadata_", {})
+        
+        # Set user_id from actor for multi-user support
+        data_dict["user_id"] = actor.id
 
         with self.session_maker() as session:
             item = SemanticMemoryItem(**data_dict)
@@ -441,12 +448,14 @@ class SemanticMemoryManager:
     @enforce_types
     def create_many_items(self, items: List[PydanticSemanticMemoryItem], actor: PydanticUser) -> List[PydanticSemanticMemoryItem]:
         """Create multiple semantic memory items."""
-        return [self.create_item(i) for i in items]
+        return [self.create_item(i, actor) for i in items]
 
-    def get_total_number_of_items(self) -> int:
-        """Get the total number of items in the semantic memory."""
+    def get_total_number_of_items(self, actor: PydanticUser) -> int:
+        """Get the total number of items in the semantic memory for the user."""
         with self.session_maker() as session:
-            query = select(func.count(SemanticMemoryItem.id))
+            query = select(func.count(SemanticMemoryItem.id)).where(
+                SemanticMemoryItem.user_id == actor.id
+            )
             result = session.execute(query)
             return result.scalar_one()
 
@@ -454,6 +463,7 @@ class SemanticMemoryManager:
     @enforce_types
     def list_semantic_items(self, 
                             agent_state: AgentState,
+                            actor: PydanticUser,
                             query: str = '', 
                             embedded_text: Optional[List[float]] = None,
                             search_field: str = '',
@@ -497,7 +507,9 @@ class SemanticMemoryManager:
             if query == '':
                 # Use proper PostgreSQL JSON text extraction and casting for ordering
                 from sqlalchemy import cast, DateTime, text
-                query_stmt = select(SemanticMemoryItem).order_by(
+                query_stmt = select(SemanticMemoryItem).where(
+                    SemanticMemoryItem.user_id == actor.id
+                ).order_by(
                     cast(text("semantic_memory.last_modify ->> 'timestamp'"), DateTime).desc()
                 )
                 if limit:
@@ -523,6 +535,9 @@ class SemanticMemoryManager:
                     SemanticMemoryItem.metadata_.label("metadata_"),
                     SemanticMemoryItem.last_modify.label("last_modify"),
                     SemanticMemoryItem.tree_path.label("tree_path"),
+                    SemanticMemoryItem.user_id.label("user_id"),
+                ).where(
+                    SemanticMemoryItem.user_id == actor.id
                 )
 
                 if search_method == 'embedding':
@@ -550,12 +565,14 @@ class SemanticMemoryManager:
                     if settings.mirix_pg_uri_no_default:
                         # Use PostgreSQL native full-text search
                         return self._postgresql_fulltext_search(
-                            session, base_query, query, search_field, limit
+                            session, base_query, query, search_field, limit, actor
                         )
                     else:
                         # Fallback to in-memory BM25 for SQLite (legacy method)
                         # Load all candidate items (memory-intensive, kept for compatibility)
-                        result = session.execute(select(SemanticMemoryItem))
+                        result = session.execute(select(SemanticMemoryItem).where(
+                            SemanticMemoryItem.user_id == actor.id
+                        ))
                         all_items = result.scalars().all()
                         
                         if not all_items:
@@ -611,7 +628,9 @@ class SemanticMemoryManager:
 
                 elif search_method == 'fuzzy_match':
                     # Fuzzy matching: load all candidate items into memory and compute a fuzzy match score.
-                    result = session.execute(select(SemanticMemoryItem))
+                    result = session.execute(select(SemanticMemoryItem).where(
+                        SemanticMemoryItem.user_id == actor.id
+                    ))
                     all_items = result.scalars().all()
                     scored_items = []
                     for item in all_items:
@@ -646,6 +665,7 @@ class SemanticMemoryManager:
     @enforce_types
     def insert_semantic_item(
         self,
+        actor: PydanticUser,
         agent_state: AgentState,
         name: str,
         summary: str,
@@ -675,6 +695,7 @@ class SemanticMemoryManager:
 
             semantic_item = self.create_item(
                 item_data=PydanticSemanticMemoryItem(
+                    user_id=actor.id,
                     name=name,
                     summary=summary,
                     details=details,
@@ -685,7 +706,8 @@ class SemanticMemoryManager:
                     summary_embedding=summary_embedding,
                     embedding_config=embedding_config,
                     tree_path=tree_path,
-                )
+                ),
+                actor=actor
             )
             
             # Note: Item is already added to clustering tree in create_item()
@@ -694,11 +716,11 @@ class SemanticMemoryManager:
             raise e
 
 
-    def delete_semantic_item_by_id(self, semantic_memory_id: str) -> None:
+    def delete_semantic_item_by_id(self, semantic_memory_id: str, actor: PydanticUser) -> None:
         """Delete a semantic memory item by ID."""
         with self.session_maker() as session:
             try:
-                item = SemanticMemoryItem.read(db_session=session, identifier=semantic_memory_id)
+                item = SemanticMemoryItem.read(db_session=session, identifier=semantic_memory_id, actor=actor)
                 item.hard_delete(session)
             except NoResultFound:
                 raise NoResultFound(f"Semantic memory item with id {semantic_memory_id} not found.")

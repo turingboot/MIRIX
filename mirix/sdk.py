@@ -129,6 +129,47 @@ class Mirix:
         )
         return response
     
+    def list_users(self) -> Dict[str, Any]:
+        """
+        List all users in the system.
+        
+        Returns:
+            Dict containing success status, list of users, and any error messages
+            
+        Example:
+            result = memory_agent.list_users()
+            if result['success']:
+                for user in result['users']:
+                    print(f"User: {user['name']} (ID: {user['id']})")
+            else:
+                print(f"Failed to list users: {result['error']}")
+        """
+        users = self._agent.client.server.user_manager.list_users()
+        return users
+
+    def get_user_by_name(self, user_name: str):
+        """
+        Get a user by their name.
+        
+        Args:
+            user_name: The name of the user to search for
+            
+        Returns:
+            User object if found, None if not found
+            
+        Example:
+            user = memory_agent.get_user_by_name("Alice")
+            if user:
+                print(f"Found user: {user.name} (ID: {user.id})")
+            else:
+                print("User not found")
+        """
+        users = self.list_users()
+        for user in users:
+            if user.name == user_name:
+                return user
+        return None
+
     def chat(self, message: str, **kwargs) -> str:
         """
         Chat with the memory agent.
@@ -316,6 +357,21 @@ class Mirix:
         import mirix.settings
         for field_name in ModelSettings.model_fields:
             setattr(mirix.settings.model_settings, field_name, getattr(new_settings, field_name))
+    
+    def create_user(self, user_name: str) -> Dict[str, Any]:
+        """
+        Create a new user in the system.
+        
+        Args:
+            name: The name for the new user
+            
+        Returns:
+            Dict containing success status, message, and user data
+            
+        Example:
+            result = memory_agent.create_user("Alice")
+        """
+        return self._agent.create_user(name=user_name)['user']
     
     def __call__(self, message: str) -> str:
         """

@@ -38,6 +38,12 @@ The script will run all tests automatically and show results for each memory typ
 """
 
 import os
+import sys
+
+# Add the project root to Python path so we can import mirix
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, project_root)
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -226,33 +232,6 @@ def run_tracked_test(test_name, test_description, test_function, *args, **kwargs
         traceback.print_exc()
         return None
 
-# OLD MIXED FUNCTIONS (REPLACED BY SEPARATED DIRECT/INDIRECT FUNCTIONS)
-# These functions mixed both direct and indirect tests - they are now replaced by the separated versions above
-
-# Original test_episodic_memory function has been split into:
-# - test_episodic_memory_direct (for manager method calls)
-# - test_episodic_memory_indirect (for message-based interactions)
-
-# Original test_procedural_memory function has been split into:
-# - test_procedural_memory_direct (for manager method calls)  
-# - test_procedural_memory_indirect (for message-based interactions)
-
-# Original test_resource_memory function has been split into:
-# - test_resource_memory_direct (for manager method calls)
-# - test_resource_memory_indirect (for message-based interactions)
-
-# Original test_resource_memory_update function has been split into:
-# - test_resource_memory_update_direct (for manager method calls)
-# - test_resource_memory_update_indirect (for message-based interactions)
-
-# Original test_knowledge_vault function has been split into:
-# - test_knowledge_vault_direct (for manager method calls)
-# - test_knowledge_vault_indirect (for message-based interactions)
-
-# Original test_semantic_memory function has been split into:
-# - test_semantic_memory_direct (for manager method calls)
-# - test_semantic_memory_indirect (for message-based interactions)
-
 def test_search_methods(agent):
     """Test different search methods across all memory types"""
     test_tracker.start_test("Search Methods Test", "Testing different search methods across all memory types")
@@ -287,6 +266,7 @@ def test_search_methods(agent):
                     try:
                         results = agent.client.server.episodic_memory_manager.list_episodic_memory(
                             agent_state=agent.agent_states.episodic_memory_agent_state,
+                            actor=agent.client.user,
                             query=test_queries['episodic'],
                             search_method=method,
                             search_field=field,
@@ -308,6 +288,7 @@ def test_search_methods(agent):
                     try:
                         results = agent.client.server.procedural_memory_manager.list_procedures(
                             agent_state=agent.agent_states.procedural_memory_agent_state,
+                            actor=agent.client.user,
                             query=test_queries['procedural'],
                             search_method=method,
                             search_field=field,
@@ -334,6 +315,7 @@ def test_search_methods(agent):
                     try:
                         results = agent.client.server.resource_memory_manager.list_resources(
                             agent_state=agent.agent_states.resource_memory_agent_state,
+                            actor=agent.client.user,
                             query=test_queries['resource'],
                             search_method=method,
                             search_field=field,
@@ -359,6 +341,7 @@ def test_search_methods(agent):
                     try:
                         results = agent.client.server.knowledge_vault_manager.list_knowledge(
                             agent_state=agent.agent_states.knowledge_vault_agent_state,
+                            actor=agent.client.user,
                             query=test_queries['knowledge_vault'],
                             search_method=method,
                             search_field=field,
@@ -380,6 +363,7 @@ def test_search_methods(agent):
                     try:
                         results = agent.client.server.semantic_memory_manager.list_semantic_items(
                             agent_state=agent.agent_states.semantic_memory_agent_state,
+                            actor=agent.client.user,
                             query=test_queries['semantic'],
                             search_method=method,
                             search_field=field,
@@ -452,6 +436,7 @@ def test_fts5_comprehensive(agent):
                 try:
                     results = manager_method(
                         agent_state=agent_state,
+                        actor=agent.client.user,
                         query=test_case['query'],
                         search_method='bm25',
                         search_field=field,
@@ -465,6 +450,7 @@ def test_fts5_comprehensive(agent):
             try:
                 results = manager_method(
                     agent_state=agent_state,
+                    actor=agent.client.user,
                     query=test_case['query'],
                     search_method='bm25',
                     limit=5
@@ -505,6 +491,7 @@ def test_fts5_performance_comparison(agent):
                 if method == 'bm25':
                     results = agent.client.server.episodic_memory_manager.list_episodic_memory(
                         agent_state=agent.agent_states.episodic_memory_agent_state,
+                        actor=agent.client.user,
                         query=query,
                         search_method=method,
                         limit=50
@@ -512,6 +499,7 @@ def test_fts5_performance_comparison(agent):
                 elif method == 'string_match':
                     results = agent.client.server.episodic_memory_manager.list_episodic_memory(
                         agent_state=agent.agent_states.episodic_memory_agent_state,
+                        actor=agent.client.user,
                         query=query,
                         search_method=method,
                         search_field='summary',
@@ -520,6 +508,7 @@ def test_fts5_performance_comparison(agent):
                 elif method == 'fuzzy_match':
                     results = agent.client.server.episodic_memory_manager.list_episodic_memory(
                         agent_state=agent.agent_states.episodic_memory_agent_state,
+                        actor=agent.client.user,
                         query=query,
                         search_method=method,
                         search_field='summary',
@@ -581,6 +570,7 @@ def test_fts5_advanced_features(agent):
         try:
             results = agent.client.server.episodic_memory_manager.list_episodic_memory(
                 agent_state=agent.agent_states.episodic_memory_agent_state,
+                actor=agent.client.user,
                 query=query,
                 search_method='bm25',
                 search_field=field,
@@ -626,6 +616,7 @@ def test_fts5_advanced_features(agent):
                 try:
                     results = method(
                         agent_state=agent_state,
+                        actor=agent.client.user,
                         query=query,
                         search_method='bm25',
                         limit=5
@@ -652,6 +643,7 @@ def test_fts5_advanced_features(agent):
         try:
             results = agent.client.server.episodic_memory_manager.list_episodic_memory(
                 agent_state=agent.agent_states.episodic_memory_agent_state,
+                actor=agent.client.user,
                 query=query,
                 search_method='bm25',
                 limit=5
@@ -670,6 +662,7 @@ def list_all_memory_content(agent):
     try:
         episodic_memory = agent.client.server.episodic_memory_manager.list_episodic_memory(
             agent_state=agent.agent_states.episodic_memory_agent_state,
+            actor=agent.client.user,
             query='',  # Empty query to get all
             limit=50
         )
@@ -685,6 +678,7 @@ def list_all_memory_content(agent):
     try:
         procedures = agent.client.server.procedural_memory_manager.list_procedures(
             agent_state=agent.agent_states.procedural_memory_agent_state,
+            actor=agent.client.user,
             query='',  # Empty query to get all
             limit=50
         )
@@ -700,6 +694,7 @@ def list_all_memory_content(agent):
     try:
         resources = agent.client.server.resource_memory_manager.list_resources(
             agent_state=agent.agent_states.resource_memory_agent_state,
+            actor=agent.client.user,
             query='',  # Empty query to get all
             limit=50
         )
@@ -715,6 +710,7 @@ def list_all_memory_content(agent):
     try:
         knowledge_items = agent.client.server.knowledge_vault_manager.list_knowledge(
             agent_state=agent.agent_states.knowledge_vault_agent_state,
+            actor=agent.client.user,
             query='',  # Empty query to get all
             limit=50
         )
@@ -730,6 +726,7 @@ def list_all_memory_content(agent):
     try:
         semantic_items = agent.client.server.semantic_memory_manager.list_semantic_items(
             agent_state=agent.agent_states.semantic_memory_agent_state,
+            actor=agent.client.user,
             query='',  # Empty query to get all
             limit=50
         )
@@ -780,7 +777,8 @@ def test_specific_memory_search(agent, memory_type, query, search_method='bm25',
     try:
         if memory_type == 'episodic':
             results = agent.client.server.episodic_memory_manager.list_episodic_memory(
-                agent_state=agent.episodic_memory_agent_state,
+                agent_state=agent.agent_states.episodic_memory_agent_state,
+                actor=agent.client.user,
                 query=query,
                 search_method=search_method,
                 search_field=search_field,
@@ -795,7 +793,8 @@ def test_specific_memory_search(agent, memory_type, query, search_method='bm25',
                 
         elif memory_type == 'procedural':
             results = agent.client.server.procedural_memory_manager.list_procedures(
-                agent_state=agent.procedural_memory_agent_state,
+                agent_state=agent.agent_states.procedural_memory_agent_state,
+                actor=agent.client.user,
                 query=query,
                 search_method=search_method,
                 search_field=search_field,
@@ -809,7 +808,8 @@ def test_specific_memory_search(agent, memory_type, query, search_method='bm25',
                     
         elif memory_type == 'resource':
             results = agent.client.server.resource_memory_manager.list_resources(
-                agent_state=agent.resource_memory_agent_state,
+                agent_state=agent.agent_states.resource_memory_agent_state,
+                actor=agent.client.user,
                 query=query,
                 search_method=search_method,
                 search_field=search_field,
@@ -824,7 +824,8 @@ def test_specific_memory_search(agent, memory_type, query, search_method='bm25',
                     
         elif memory_type == 'knowledge_vault':
             results = agent.client.server.knowledge_vault_manager.list_knowledge(
-                agent_state=agent.knowledge_vault_agent_state,
+                agent_state=agent.agent_states.knowledge_vault_agent_state,
+                actor=agent.client.user,
                 query=query,
                 search_method=search_method,
                 search_field=search_field,
@@ -838,7 +839,8 @@ def test_specific_memory_search(agent, memory_type, query, search_method='bm25',
                 
         elif memory_type == 'semantic':
             results = agent.client.server.semantic_memory_manager.list_semantic_items(
-                agent_state=agent.semantic_memory_agent_state,
+                agent_state=agent.agent_states.semantic_memory_agent_state,
+                actor=agent.client.user,
                 query=query,
                 search_method=search_method,
                 search_field=search_field,
@@ -951,7 +953,7 @@ def test_all_memories():
         # Phase 1: Direct memory operations (manager method calls)
         test_all_direct_memory_operations(agent)
 
-        agent.reflexion_on_memory()
+        # agent.reflexion_on_memory()
         
         # Phase 2: Indirect memory operations (message-based)
         test_all_indirect_memory_operations(agent)
@@ -1345,10 +1347,11 @@ def test_episodic_memory_direct(agent):
         subtest_idx = test_tracker.start_subtest("Direct Event Insert")
         try:
             event = agent.client.server.episodic_memory_manager.insert_event(
+                actor=agent.client.user,
                 agent_state=agent.agent_states.episodic_memory_agent_state,
                 event_type='activity',
                 timestamp=datetime.now(agent.timezone),
-                actor='user',
+                event_actor='user',
                 summary='Started working on a coding project',
                 details='User began working on a new Python project for data analysis',
                 organization_id=agent.client.org_id,
@@ -1365,6 +1368,7 @@ def test_episodic_memory_direct(agent):
         try:
             search_response = agent.client.server.episodic_memory_manager.list_episodic_memory(
                 agent_state=agent.agent_states.episodic_memory_agent_state,
+                actor=agent.client.user,
                 query="coding",
                 search_method='embedding',
                 search_field='details',
@@ -1374,6 +1378,7 @@ def test_episodic_memory_direct(agent):
             
             search_response = agent.client.server.episodic_memory_manager.list_episodic_memory(
                 agent_state=agent.agent_states.episodic_memory_agent_state,
+                actor=agent.client.user,
                 query="coding",
                 search_method='bm25',
                 search_field='summary',
@@ -1391,7 +1396,8 @@ def test_episodic_memory_direct(agent):
             updated_event = agent.client.server.episodic_memory_manager.update_event(
                 event_id=event.id,
                 new_summary="Continued working on coding project with progress",
-                new_details="Added data visualization features and completed the main algorithm implementation"
+                new_details="Added data visualization features and completed the main algorithm implementation",
+                actor=agent.client.user
             )
             print(f"Updated event - New summary: {updated_event.summary}")
             print(f"Updated details: {updated_event.details}")
@@ -1423,15 +1429,17 @@ def test_procedural_memory_direct(agent):
             'Wait 4 minutes',
             'Serve'
         ],
+        actor=agent.client.user,
         tree_path=['recipes', 'beverages', 'hot'],
         organization_id=agent.client.org_id
     )
     print(f"Inserted procedure with ID: {procedure.id}")
-    
+
     # Test 2: Direct search operations
     print("\n--- Test 2: Direct Procedure Search Operations ---")
     search_results = agent.client.server.procedural_memory_manager.list_procedures(
         agent_state=agent.agent_states.procedural_memory_agent_state,
+        actor=agent.client.user,
         query="coffee",
         search_method='embedding',
         search_field='summary',
@@ -1441,6 +1449,7 @@ def test_procedural_memory_direct(agent):
     
     search_results = agent.client.server.procedural_memory_manager.list_procedures(
         agent_state=agent.agent_states.procedural_memory_agent_state,
+        actor=agent.client.user,
         query="coffee",
         search_method='bm25',
         search_field='summary',
@@ -1449,7 +1458,7 @@ def test_procedural_memory_direct(agent):
     print(f"FTS5 search found {len(search_results)} procedures")
     
     # Cleanup
-    agent.client.server.procedural_memory_manager.delete_procedure_by_id(procedure_id=procedure.id)
+    agent.client.server.procedural_memory_manager.delete_procedure_by_id(procedure_id=procedure.id, actor=agent.client.user)
     print("Cleaned up test procedure")
     print("Direct procedural memory tests completed.\n")
 
@@ -1460,6 +1469,7 @@ def test_resource_memory_direct(agent):
     # Test 1: Direct insert
     print("\n--- Test 1: Direct Resource Insert ---")
     resource = agent.client.server.resource_memory_manager.insert_resource(
+        actor=agent.client.user,
         agent_state=agent.agent_states.resource_memory_agent_state,
         title='Python Documentation Test',
         summary='Test resource for direct operations',
@@ -1474,6 +1484,7 @@ def test_resource_memory_direct(agent):
     print("\n--- Test 2: Direct Resource Search Operations ---")
     search_results = agent.client.server.resource_memory_manager.list_resources(
         agent_state=agent.agent_states.resource_memory_agent_state,
+        actor=agent.client.user,
         query="Python",
         search_method='embedding',
         search_field='summary',
@@ -1483,6 +1494,7 @@ def test_resource_memory_direct(agent):
     
     search_results = agent.client.server.resource_memory_manager.list_resources(
         agent_state=agent.agent_states.resource_memory_agent_state,
+        actor=agent.client.user,
         query="Python",
         search_method='bm25',
         search_field='title',
@@ -1491,7 +1503,7 @@ def test_resource_memory_direct(agent):
     print(f"FTS5 search found {len(search_results)} resources")
     
     # Cleanup
-    agent.client.server.resource_memory_manager.delete_resource_by_id(resource_id=resource.id)
+    agent.client.server.resource_memory_manager.delete_resource_by_id(resource_id=resource.id, actor=agent.client.user)
     print("Cleaned up test resource")
     print("Direct resource memory tests completed.\n")
 
@@ -1502,6 +1514,7 @@ def test_knowledge_vault_direct(agent):
     # Test 1: Direct insert
     print("\n--- Test 1: Direct Knowledge Insert ---")
     knowledge = agent.client.server.knowledge_vault_manager.insert_knowledge(
+        actor=agent.client.user,
         agent_state=agent.agent_states.knowledge_vault_agent_state,
         entry_type='credential',
         source='development_environment',
@@ -1514,6 +1527,7 @@ def test_knowledge_vault_direct(agent):
     
     search_results = agent.client.server.knowledge_vault_manager.list_knowledge(
         agent_state=agent.agent_states.knowledge_vault_agent_state,
+        actor=agent.client.user,
         query="test_api_key",
         search_method='bm25',
         search_field='secret_value',
@@ -1522,7 +1536,7 @@ def test_knowledge_vault_direct(agent):
     print(f"FTS5 search found {len(search_results)} knowledge items")
     
     # Cleanup
-    agent.client.server.knowledge_vault_manager.delete_knowledge_by_id(knowledge_vault_item_id=knowledge.id)
+    agent.client.server.knowledge_vault_manager.delete_knowledge_by_id(knowledge_vault_item_id=knowledge.id, actor=agent.client.user)
     print("Cleaned up test knowledge")
     print("Direct knowledge vault tests completed.\n")
 
@@ -1533,6 +1547,7 @@ def test_semantic_memory_direct(agent):
     # Test 1: Direct insert
     print("\n--- Test 1: Direct Semantic Insert ---")
     semantic_item = agent.client.server.semantic_memory_manager.insert_semantic_item(
+        actor=agent.client.user,
         agent_state=agent.agent_states.semantic_memory_agent_state,
         name='Test Machine Learning Concept',
         summary='A test concept for direct operations',
@@ -1547,6 +1562,7 @@ def test_semantic_memory_direct(agent):
     print("\n--- Test 2: Direct Semantic Search Operations ---")
     search_results = agent.client.server.semantic_memory_manager.list_semantic_items(
         agent_state=agent.agent_states.semantic_memory_agent_state,
+        actor=agent.client.user,
         query="Test Machine Learning",
         search_method='embedding',
         search_field='name',
@@ -1556,6 +1572,7 @@ def test_semantic_memory_direct(agent):
     
     search_results = agent.client.server.semantic_memory_manager.list_semantic_items(
         agent_state=agent.agent_states.semantic_memory_agent_state,
+        actor=agent.client.user,
         query="Test Machine Learning",
         search_method='bm25',
         search_field='name',
@@ -1564,7 +1581,7 @@ def test_semantic_memory_direct(agent):
     print(f"FTS5 search found {len(search_results)} semantic items")
     
     # Cleanup
-    agent.client.server.semantic_memory_manager.delete_semantic_item_by_id(semantic_memory_id=semantic_item.id)
+    agent.client.server.semantic_memory_manager.delete_semantic_item_by_id(semantic_memory_id=semantic_item.id, actor=agent.client.user)
     print("Cleaned up test semantic item")
     print("Direct semantic memory tests completed.\n")
 
@@ -1575,6 +1592,7 @@ def test_resource_memory_update_direct(agent):
     # Test 1: Create resources for update testing
     print("\n--- Test 1: Create Test Resources ---")
     resource1 = agent.client.server.resource_memory_manager.insert_resource(
+        actor=agent.client.user,
         agent_state=agent.agent_states.resource_memory_agent_state,
         title='Initial Test Resource 1',
         summary='Initial summary for update testing',
@@ -1585,6 +1603,7 @@ def test_resource_memory_update_direct(agent):
     )
     
     resource2 = agent.client.server.resource_memory_manager.insert_resource(
+        actor=agent.client.user,
         agent_state=agent.agent_states.resource_memory_agent_state,
         title='Initial Test Resource 2',
         summary='Second resource for update testing',
@@ -1600,6 +1619,7 @@ def test_resource_memory_update_direct(agent):
     print("\n--- Test 2: Search After Creation ---")
     search_results = agent.client.server.resource_memory_manager.list_resources(
         agent_state=agent.agent_states.resource_memory_agent_state,
+        actor=agent.client.user,
         query="Initial Test",
         search_method='embedding',
         search_field='summary',
@@ -1609,6 +1629,7 @@ def test_resource_memory_update_direct(agent):
     
     search_results = agent.client.server.resource_memory_manager.list_resources(
         agent_state=agent.agent_states.resource_memory_agent_state,
+        actor=agent.client.user,
         query="Initial Test",
         search_method='bm25',
         search_field='title',
@@ -1619,8 +1640,8 @@ def test_resource_memory_update_direct(agent):
     # Test 3: Cleanup test resources
     print("\n--- Test 3: Cleanup Test Resources ---")
     try:
-        agent.client.server.resource_memory_manager.delete_resource_by_id(resource_id=resource1.id)
-        agent.client.server.resource_memory_manager.delete_resource_by_id(resource_id=resource2.id)
+        agent.client.server.resource_memory_manager.delete_resource_by_id(resource_id=resource1.id, actor=agent.client.user)
+        agent.client.server.resource_memory_manager.delete_resource_by_id(resource_id=resource2.id, actor=agent.client.user)
         print("Cleaned up test resources")
     except Exception as e:
         print(f"Error during cleanup: {e}")
@@ -1657,6 +1678,7 @@ def test_tree_path_functionality_direct(agent):
             'Test step 2', 
             'Complete'
         ],
+        actor=agent.client.user,
         tree_path=['test', 'tree_paths', 'procedural'],
         organization_id=agent.client.org_id
     )
@@ -1692,6 +1714,7 @@ def test_tree_path_functionality_direct(agent):
     # Search and verify tree paths using semantic search
     episodic_results = agent.client.server.episodic_memory_manager.list_episodic_memory(
         agent_state=agent.agent_states.episodic_memory_agent_state,
+        actor=agent.client.user,
         query="tree path test",
         search_method='embedding',
         search_field='summary',
@@ -1705,6 +1728,7 @@ def test_tree_path_functionality_direct(agent):
     # Search and verify tree paths using FTS5 search
     episodic_results = agent.client.server.episodic_memory_manager.list_episodic_memory(
         agent_state=agent.agent_states.episodic_memory_agent_state,
+        actor=agent.client.user,
         query="tree path test",
         search_method='bm25',
         limit=10
@@ -1717,10 +1741,10 @@ def test_tree_path_functionality_direct(agent):
     # Cleanup
     print("\n--- Test 3: Cleanup Tree Path Test Items ---")
     try:
-        agent.client.server.episodic_memory_manager.delete_event_by_id(episodic_event.id)
-        agent.client.server.procedural_memory_manager.delete_procedure_by_id(procedure.id)
-        agent.client.server.resource_memory_manager.delete_resource_by_id(resource.id)
-        agent.client.server.semantic_memory_manager.delete_semantic_item_by_id(semantic_item.id)
+        agent.client.server.episodic_memory_manager.delete_event_by_id(episodic_event.id, actor=agent.client.user)
+        agent.client.server.procedural_memory_manager.delete_procedure_by_id(procedure.id, actor=agent.client.user)
+        agent.client.server.resource_memory_manager.delete_resource_by_id(resource.id, actor=agent.client.user)
+        agent.client.server.semantic_memory_manager.delete_semantic_item_by_id(semantic_item.id, actor=agent.client.user)
         print("Cleaned up all tree path test items")
     except Exception as e:
         print(f"Error during cleanup: {e}")
@@ -1872,6 +1896,17 @@ def test_episodic_memory_indirect(agent):
         agent_type='episodic_memory'
     )
     print(f"Second response: {response2}")
+
+    test_message3 = "Update the last episodic memory, because I didn't buy chicken two days ago."
+
+    response3, agent_type3 = agent.message_queue.send_message_in_queue(
+        agent.client,
+        agent.agent_states.episodic_memory_agent_state.id,
+        kwargs={
+            'message': test_message3,
+        },
+        agent_type='episodic_memory'
+    )
     
     print("Indirect episodic memory tests completed.\n")
 
@@ -1972,6 +2007,7 @@ def test_resource_memory_update_indirect(agent):
     
     # First create some resources via direct method for testing updates
     resource1 = agent.client.server.resource_memory_manager.insert_resource(
+        actor=agent.client.user,
         agent_state=agent.agent_states.resource_memory_agent_state,
         title='Update Test Resource',
         summary='Resource for update testing via messages',
@@ -1983,6 +2019,7 @@ def test_resource_memory_update_indirect(agent):
 
     print("all resources:", [res.id for res in agent.client.server.resource_memory_manager.list_resources(
         agent_state=agent.agent_states.resource_memory_agent_state,
+        actor=agent.client.user,
         limit=100,
     )])
 

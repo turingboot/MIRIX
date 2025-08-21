@@ -274,7 +274,7 @@ def package_initial_message_sequence(
             raise ValueError(f"Invalid message role: {message_create.role}")
 
         init_messages.append(
-            Message(role=message_create.role, text=packed_message, organization_id=actor.organization_id, agent_id=agent_id, model=model)
+            Message(role=message_create.role, text=packed_message, organization_id=actor.organization_id, user_id=actor.id, agent_id=agent_id, model=model)
         )
     return init_messages
 

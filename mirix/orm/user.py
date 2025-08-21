@@ -17,6 +17,7 @@ class User(SqlalchemyBase, OrganizationMixin):
     __pydantic_model__ = PydanticUser
 
     name: Mapped[str] = mapped_column(nullable=False, doc="The display name of the user.")
+    status: Mapped[str] = mapped_column(nullable=False, doc="Whether the user is active or not.")
     timezone: Mapped[str] = mapped_column(nullable=False, doc="The timezone of the user.")
 
     # relationships

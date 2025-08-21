@@ -6,7 +6,7 @@ from sqlalchemy import Column, DateTime, String, JSON, Index, text
 from sqlalchemy.orm import Mapped, mapped_column, declared_attr, relationship
 
 from mirix.orm.sqlalchemy_base import SqlalchemyBase
-from mirix.orm.mixins import OrganizationMixin
+from mirix.orm.mixins import OrganizationMixin, UserMixin
 
 from mirix.schemas.episodic_memory import EpisodicEvent as PydanticEpisodicEvent
 
@@ -16,9 +16,10 @@ from mirix.settings import settings
 
 if TYPE_CHECKING:
     from mirix.orm.organization import Organization
+    from mirix.orm.user import User
 
 
-class EpisodicEvent(SqlalchemyBase, OrganizationMixin):
+class EpisodicEvent(SqlalchemyBase, OrganizationMixin, UserMixin):
     """
     Represents an event in the 'episodic memory' system, capturing
     timestamped interactions or observations with a short summary
@@ -144,5 +145,15 @@ class EpisodicEvent(SqlalchemyBase, OrganizationMixin):
         return relationship(
             "Organization",
             back_populates="episodic_memory",
+            lazy="selectin"
+        )
+
+    @declared_attr
+    def user(cls) -> Mapped["User"]:
+        """
+        Relationship to the User that owns this episodic event.
+        """
+        return relationship(
+            "User",
             lazy="selectin"
         )

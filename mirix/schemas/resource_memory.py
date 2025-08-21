@@ -24,6 +24,7 @@ class ResourceMemoryItem(ResourceMemoryItemBase):
     Full schema for resource memory items with DB fields.
     """
     id: Optional[str] = Field(None, description="Unique identifier for the resource memory item")
+    user_id: str = Field(..., description="The id of the user who generated the resource")
     created_at: datetime = Field(default_factory=get_utc_time, description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
     last_modify: Dict[str, Any] = Field(

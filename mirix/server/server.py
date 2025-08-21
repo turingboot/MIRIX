@@ -562,6 +562,7 @@ class SyncServer(Server):
         extra_messages: Optional[List[dict]] = None,
         message_queue: Optional[any] = None,
         retrieved_memories: Optional[dict] = None,
+        user_id: Optional[str] = None,
     ) -> MirixUsageStatistics:
         """Send the input message through the agent"""
         logger.debug(f"Got input messages: {input_messages}")
@@ -598,6 +599,7 @@ class SyncServer(Server):
                 put_inner_thoughts_first=put_inner_thoughts_first,
                 extra_messages=extra_messages,
                 message_queue=message_queue,
+                user_id=user_id
             )
 
         except Exception as e:
@@ -845,6 +847,7 @@ class SyncServer(Server):
         extra_messages: Optional[List[dict]] = None,
         message_queue: Optional[any] = None,
         retrieved_memories: Optional[dict] = None,
+        user_id: Optional[str] = None,
     ) -> MirixUsageStatistics:
         """Send a list of messages to the agent."""
 
@@ -866,7 +869,8 @@ class SyncServer(Server):
             existing_file_uris=existing_file_uris,
             extra_messages=extra_messages,
             message_queue=message_queue,
-            retrieved_memories=retrieved_memories
+            retrieved_memories=retrieved_memories,
+            user_id=user_id
         )
 
     # @LockingServer.agent_lock_decorator

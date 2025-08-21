@@ -1,20 +1,21 @@
 from typing import TYPE_CHECKING, Optional, Type
 
 from sqlalchemy import JSON, BigInteger, Integer, UniqueConstraint, event
-from sqlalchemy.orm import Mapped, attributes, mapped_column, relationship
+from sqlalchemy.orm import Mapped, attributes, mapped_column, relationship, declared_attr
 
 from mirix.constants import CORE_MEMORY_BLOCK_CHAR_LIMIT
 from mirix.orm.blocks_agents import BlocksAgents
-from mirix.orm.mixins import OrganizationMixin
+from mirix.orm.mixins import OrganizationMixin, UserMixin
 from mirix.orm.sqlalchemy_base import SqlalchemyBase
 from mirix.schemas.block import Block as PydanticBlock
 from mirix.schemas.block import Human, Persona
 
 if TYPE_CHECKING:
     from mirix.orm import Organization
+    from mirix.orm.user import User
 
 
-class Block(OrganizationMixin, SqlalchemyBase):
+class Block(OrganizationMixin, UserMixin, SqlalchemyBase):
     """Blocks are sections of the LLM context, representing a specific part of the total Memory"""
 
     __tablename__ = "block"
@@ -36,6 +37,16 @@ class Block(OrganizationMixin, SqlalchemyBase):
 
     # relationships
     organization: Mapped[Optional["Organization"]] = relationship("Organization")
+    
+    @declared_attr
+    def user(cls) -> Mapped["User"]:
+        """
+        Relationship to the User that owns this block.
+        """
+        return relationship(
+            "User",
+            lazy="selectin"
+        )
 
     def to_pydantic(self) -> Type:
         if self.label == "human":

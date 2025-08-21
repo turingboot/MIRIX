@@ -108,6 +108,7 @@ def search_in_memory(self: "Agent", memory_type: str, query: str, search_field: 
 
     if memory_type == 'episodic' or memory_type == 'all':
         episodic_memory = self.episodic_memory_manager.list_episodic_memory(
+            actor=self.user,
             agent_state=self.agent_state,
             query=query,
             search_field=search_field if search_field != 'null' else 'summary',
@@ -120,7 +121,9 @@ def search_in_memory(self: "Agent", memory_type: str, query: str, search_field: 
             return formatted_results_from_episodic, len(formatted_results_from_episodic)
 
     if memory_type == 'resource' or memory_type == 'all':
-        resource_memories = self.resource_memory_manager.list_resources(agent_state=self.agent_state,
+        resource_memories = self.resource_memory_manager.list_resources(
+            actor=self.user,
+            agent_state=self.agent_state,
             query=query,
             search_field=search_field if search_field != 'null' else ('summary' if search_method == 'embedding' else 'content'),
             search_method=search_method,
@@ -132,7 +135,9 @@ def search_in_memory(self: "Agent", memory_type: str, query: str, search_field: 
             return formatted_results_resource, len(formatted_results_resource)
     
     if memory_type == 'procedural' or memory_type == 'all':
-        procedural_memories = self.procedural_memory_manager.list_procedures(agent_state=self.agent_state,
+        procedural_memories = self.procedural_memory_manager.list_procedures(
+            actor=self.user,
+            agent_state=self.agent_state,
             query=query,
             search_field=search_field if search_field != 'null' else 'summary',
             search_method=search_method,
@@ -144,7 +149,9 @@ def search_in_memory(self: "Agent", memory_type: str, query: str, search_field: 
             return formatted_results_procedural, len(formatted_results_procedural)
     
     if memory_type == 'knowledge_vault' or memory_type == 'all':
-        knowledge_vault_memories = self.knowledge_vault_manager.list_knowledge(agent_state=self.agent_state,
+        knowledge_vault_memories = self.knowledge_vault_manager.list_knowledge(
+            actor=self.user,
+            agent_state=self.agent_state,
             query=query,
             search_field=search_field if search_field != 'null' else 'caption',
             search_method=search_method,
@@ -156,7 +163,9 @@ def search_in_memory(self: "Agent", memory_type: str, query: str, search_field: 
             return formatted_results_knowledge_vault, len(formatted_results_knowledge_vault)
 
     if memory_type == 'semantic' or memory_type == 'all':
-        semantic_memories = self.semantic_memory_manager.list_semantic_items(agent_state=self.agent_state,
+        semantic_memories = self.semantic_memory_manager.list_semantic_items(
+            actor=self.user,
+            agent_state=self.agent_state,
             query=query,
             search_field=search_field if search_field != 'null' else 'summary',
             search_method=search_method,
@@ -186,6 +195,7 @@ def list_memory_within_timerange(self: "Agent", memory_type: str, start_time: st
 
     if memory_type == 'episodic' or memory_type == 'all':
         episodic_memory = self.episodic_memory_manager.list_episodic_memory_around_timestamp(
+            actor=self.user,
             agent_state=self.agent_state,
             start_time=start_time,
             end_time=end_time,

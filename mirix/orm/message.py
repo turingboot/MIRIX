@@ -2,10 +2,10 @@ from typing import List, Optional
 
 from mirix.schemas.openai.openai import ToolCall as OpenAIToolCall
 from sqlalchemy import BigInteger, FetchedValue, ForeignKey, Index, event, text
-from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
+from sqlalchemy.orm import Mapped, Session, mapped_column, relationship, declared_attr
 
 from mirix.orm.custom_columns import MessageContentColumn, ToolCallColumn, ToolReturnColumn
-from mirix.orm.mixins import AgentMixin, OrganizationMixin
+from mirix.orm.mixins import AgentMixin, OrganizationMixin, UserMixin
 from mirix.orm.sqlalchemy_base import SqlalchemyBase
 from mirix.schemas.mirix_message_content import MessageContent
 from mirix.schemas.mirix_message_content import TextContent as PydanticTextContent
@@ -14,7 +14,7 @@ from mirix.schemas.message import ToolReturn
 from mirix.settings import settings
 
 
-class Message(SqlalchemyBase, OrganizationMixin, AgentMixin):
+class Message(SqlalchemyBase, OrganizationMixin, UserMixin, AgentMixin):
     """Defines data model for storing Message objects"""
 
     __tablename__ = "messages"
@@ -48,6 +48,16 @@ class Message(SqlalchemyBase, OrganizationMixin, AgentMixin):
     agent: Mapped["Agent"] = relationship("Agent", back_populates="messages", lazy="selectin")
     organization: Mapped["Organization"] = relationship("Organization", back_populates="messages", lazy="selectin")
     step: Mapped["Step"] = relationship("Step", back_populates="messages", lazy="selectin")
+    
+    @declared_attr
+    def user(cls) -> Mapped["User"]:
+        """
+        Relationship to the User that owns this message.
+        """
+        return relationship(
+            "User",
+            lazy="selectin"
+        )
 
     def to_pydantic(self) -> PydanticMessage:
         """Custom pydantic conversion to handle data using legacy text field"""

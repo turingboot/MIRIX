@@ -6,7 +6,7 @@ from sqlalchemy import Column, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column, declared_attr, relationship
 
 from mirix.orm.sqlalchemy_base import SqlalchemyBase
-from mirix.orm.mixins import OrganizationMixin
+from mirix.orm.mixins import OrganizationMixin, UserMixin
 from mirix.schemas.knowledge_vault import KnowledgeVaultItem as PydanticKnowledgeVaultItem
 
 from mirix.orm.custom_columns import CommonVector, EmbeddingConfigColumn
@@ -15,9 +15,10 @@ from mirix.settings import settings
 
 if TYPE_CHECKING:
     from mirix.orm.organization import Organization
+    from mirix.orm.user import User
 
 
-class KnowledgeVaultItem(SqlalchemyBase, OrganizationMixin):
+class KnowledgeVaultItem(SqlalchemyBase, OrganizationMixin, UserMixin):
     """
     Stores verbatim knowledge vault entries like credentials, bookmarks, addresses,
     or other structured data that needs quick retrieval.
@@ -108,5 +109,15 @@ class KnowledgeVaultItem(SqlalchemyBase, OrganizationMixin):
         return relationship(
             "Organization",
             back_populates="knowledge_vault",
+            lazy="selectin"
+        )
+
+    @declared_attr
+    def user(cls) -> Mapped["User"]:
+        """
+        Relationship to the User that owns this knowledge vault item.
+        """
+        return relationship(
+            "User",
             lazy="selectin"
         )
