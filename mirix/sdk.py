@@ -223,43 +223,84 @@ class Mirix:
             'note': 'After removing the database file, you must restart your application and create a new agent instance.'
         }
     
-    def clear_conversation_history(self) -> Dict[str, Any]:
+    def clear_conversation_history(self, user_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Clear conversation history while preserving memories.
         
-        This removes all user and assistant messages from the conversation
+        This removes user and assistant messages from the conversation
         history but keeps system messages and all stored memories intact.
+        
+        Args:
+            user_id: User ID to clear messages for. If None, clears all messages
+                    except system messages. If provided, only clears messages for that specific user.
         
         Returns:
             Dict containing success status, message, and count of deleted messages
             
         Example:
+            # Clear all conversation history
             result = memory_agent.clear_conversation_history()
+            
+            # Clear history for specific user
+            result = memory_agent.clear_conversation_history(user_id="user_123")
+            
             if result['success']:
                 print(f"Cleared {result['messages_deleted']} messages")
             else:
                 print(f"Failed to clear: {result['error']}")
         """
         try:
-            # Get current message count for reporting
-            current_messages = self._agent.client.server.agent_manager.get_in_context_messages(
-                agent_id=self._agent.agent_states.agent_state.id,
-                actor=self._agent.client.user
-            )
-            messages_count = len(current_messages)
-            
-            # Clear conversation history using the agent manager reset_messages method
-            self._agent.client.server.agent_manager.reset_messages(
-                agent_id=self._agent.agent_states.agent_state.id,
-                actor=self._agent.client.user,
-                add_default_initial_messages=True  # Keep system message and initial setup
-            )
-            
-            return {
-                'success': True,
-                'message': f"Successfully cleared conversation history. All user and assistant messages removed (system messages preserved).",
-                'messages_deleted': messages_count
-            }
+            if user_id is None:
+                # Clear all messages except system messages (original behavior)
+                current_messages = self._agent.client.server.agent_manager.get_in_context_messages(
+                    agent_id=self._agent.agent_states.agent_state.id,
+                    actor=self._agent.client.user
+                )
+                messages_count = len(current_messages)
+                
+                # Clear conversation history using the agent manager reset_messages method
+                self._agent.client.server.agent_manager.reset_messages(
+                    agent_id=self._agent.agent_states.agent_state.id,
+                    actor=self._agent.client.user,
+                    add_default_initial_messages=True  # Keep system message and initial setup
+                )
+                
+                return {
+                    'success': True,
+                    'message': f"Successfully cleared conversation history. All user and assistant messages removed (system messages preserved).",
+                    'messages_deleted': messages_count
+                }
+            else:
+                # Get the user object by ID
+                target_user = self._agent.client.server.user_manager.get_user_by_id(user_id)
+                if not target_user:
+                    return {
+                        'success': False,
+                        'error': f"User with ID '{user_id}' not found",
+                        'messages_deleted': 0
+                    }
+                
+                # Clear messages for specific user (same as FastAPI server implementation)
+                # Get current message count for this specific user for reporting
+                current_messages = self._agent.client.server.agent_manager.get_in_context_messages(
+                    agent_id=self._agent.agent_states.agent_state.id,
+                    actor=target_user
+                )
+                # Count messages belonging to this user (excluding system messages)
+                user_messages_count = len([msg for msg in current_messages if msg.role != 'system' and msg.user_id == target_user.id])
+                
+                # Clear conversation history using the agent manager reset_messages method
+                self._agent.client.server.agent_manager.reset_messages(
+                    agent_id=self._agent.agent_states.agent_state.id,
+                    actor=target_user,
+                    add_default_initial_messages=True  # Keep system message and initial setup
+                )
+                
+                return {
+                    'success': True,
+                    'message': f"Successfully cleared conversation history for {target_user.name}. Messages from other users and system messages preserved.",
+                    'messages_deleted': user_messages_count
+                }
             
         except Exception as e:
             return {

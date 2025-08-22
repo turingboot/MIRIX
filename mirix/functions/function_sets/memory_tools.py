@@ -453,7 +453,7 @@ def trigger_memory_update_with_instruction(self: "Agent", user_message: object, 
         role='user', 
         user_id=self.user.id,
         agent_id=matching_agent.id, 
-        message="[Message from Chat Agent (Now you are allowed to make multiple function calls sequentially)] " +instruction, 
+        message="[Message from Chat Agent (Now you are allowed to make multiple function calls sequentially)] " + instruction, 
         existing_file_uris=user_message['existing_file_uris'],
         retrieved_memories=user_message.get('retrieved_memories', None)
     )
@@ -508,6 +508,9 @@ def trigger_memory_update(self: "Agent", user_message: object, memory_types: Lis
             else:
                 raise ValueError(f"Memory type '{memory_type}' is not supported. Please choose from 'core', 'episodic', 'resource', 'procedural', 'knowledge_vault', 'semantic'.")
         
+        if user_message['message'][-1]['type'] == 'text' and user_message['message'][-1]['text'].startswith('[System Message]'):
+            user_message['message'][-1]['text'] = "[System Message] Interpret the provided content, extract the important information matching your memory type and save it into the memory."
+
         # Prepare payloads for message queue
         payloads = {
             'user_id': self.user.id,

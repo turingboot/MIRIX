@@ -1501,7 +1501,7 @@ async def get_credentials_memory():
         return []
 
 @app.post("/conversation/clear", response_model=ClearConversationResponse)
-async def clear_conversation_history(user_id: Optional[str] = None):
+async def clear_conversation_history():
     """Permanently clear all conversation history for the current agent (memories are preserved)"""
     try:
         if agent is None:
