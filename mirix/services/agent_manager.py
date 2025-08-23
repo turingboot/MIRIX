@@ -557,14 +557,14 @@ class AgentManager:
         message_ids = message_ids[1:]
 
         message_id_indices_belonging_to_actor = [idx for idx, message_id in enumerate(message_ids) if self.message_manager.get_message_by_id(message_id=message_id, actor=actor).user_id == actor.id]
-        message_id_indices_belonging_to_actor = message_id_indices_belonging_to_actor[num-1:]
-        message_ids_to_keep = [message_ids[idx] for idx in message_id_indices_belonging_to_actor]
+        message_ids_belonging_to_actor = [message_ids[idx] for idx in message_id_indices_belonging_to_actor]
+        message_ids_to_keep = [message_ids[idx] for idx in message_id_indices_belonging_to_actor[num-1:]]
 
-        message_id_indices_belonging_to_actor = set(message_id_indices_belonging_to_actor)
+        message_ids_belonging_to_actor = set(message_ids_belonging_to_actor)
         message_ids_to_keep = set(message_ids_to_keep)
 
         # new_messages = [message_ids[0]] + message_ids[num:]  # 0 is system message
-        new_messages = [system_message_id] + [msg_id for msg_id in message_ids if (msg_id not in message_id_indices_belonging_to_actor or msg_id in message_ids_to_keep)]
+        new_messages = [system_message_id] + [msg_id for msg_id in message_ids if (msg_id not in message_ids_belonging_to_actor or msg_id in message_ids_to_keep)]
         return self.set_in_context_messages(agent_id=agent_id, message_ids=new_messages, actor=actor)
 
     @enforce_types

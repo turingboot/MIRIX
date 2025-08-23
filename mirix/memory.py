@@ -1,4 +1,4 @@
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Optional
 
 from mirix.constants import MESSAGE_SUMMARY_REQUEST_ACK
 from mirix.llm_api.llm_api_tools import create
@@ -10,7 +10,7 @@ from mirix.schemas.message import Message
 from mirix.schemas.mirix_message_content import TextContent
 from mirix.settings import summarizer_settings
 from mirix.utils import count_tokens, printd
-
+from mirix.llm_api.llm_client import LLMClient
 
 def get_memory_functions(cls: Memory) -> Dict[str, Callable]:
     """Get memory functions for a memory class"""
@@ -57,6 +57,7 @@ def _format_summary_history(message_history: List[Message]):
 def summarize_messages(
     agent_state: AgentState,
     message_sequence_to_summarize: List[Message],
+    existing_file_uris: Optional[List[str]] = None,
 ):
     """Summarize a message sequence using GPT"""
     # we need the context_window
@@ -83,11 +84,18 @@ def summarize_messages(
     # TODO: We need to eventually have a separate LLM config for the summarizer LLM
     llm_config_no_inner_thoughts = agent_state.llm_config.model_copy(deep=True)
     llm_config_no_inner_thoughts.put_inner_thoughts_in_kwargs = False
-    response = create(
+    # response = create(
+    #     llm_config=llm_config_no_inner_thoughts,
+    #     messages=message_sequence,
+    #     stream=False,
+    #     summarizing=True
+    # )
+    llm_client = LLMClient.create(
         llm_config=llm_config_no_inner_thoughts,
+    )
+    response = llm_client.send_llm_request(
         messages=message_sequence,
-        stream=False,
-        summarizing=True
+        existing_file_uris=existing_file_uris,
     )
 
     printd(f"summarize_messages gpt reply: {response.choices[0]}")

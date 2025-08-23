@@ -564,7 +564,7 @@ class Agent(BaseAgent):
             if response.usage.total_tokens > self.agent_state.llm_config.context_window:
                 # trigger summarization
                 log_telemetry(self.logger, "_get_ai_reply summarize_messages_inplace")
-                self.summarize_messages_inplace()
+                self.summarize_messages_inplace(existing_file_uris=existing_file_uris)
 
             # return the response
             return response
@@ -1594,7 +1594,7 @@ These keywords have been used to retrieve relevant memories from the database.
                     self.agent_alerted_about_memory_pressure = True  # it's up to the outer loop to handle this
 
                 # if it is too long then run summarization here.
-                self.summarize_messages_inplace()
+                self.summarize_messages_inplace(existing_file_uris=existing_file_uris)
 
             else:
                 self.logger.debug(
@@ -1637,7 +1637,7 @@ These keywords have been used to retrieve relevant memories from the database.
                         f"context window exceeded with limit {self.agent_state.llm_config.context_window}, attempting to summarize ({summarize_attempt_count}/{summarizer_settings.max_summarizer_retries}"
                     )
                     # A separate API call to run a summarizer
-                    self.summarize_messages_inplace()
+                    self.summarize_messages_inplace(existing_file_uris=existing_file_uris)
 
                     # Try step again
                     return self.inner_step(
@@ -1714,7 +1714,8 @@ These keywords have been used to retrieve relevant memories from the database.
 
         return self.inner_step(messages=[user_message], **kwargs)
 
-    def summarize_messages_inplace(self):
+    def summarize_messages_inplace(self, existing_file_uris: Optional[List[str]] = None):
+
         in_context_messages = self.agent_manager.get_in_context_messages(agent_id=self.agent_state.id, actor=self.user)
         in_context_messages_openai = [m.to_openai_dict() for m in in_context_messages]
         in_context_messages_openai_no_system = in_context_messages_openai[1:]
@@ -1748,7 +1749,7 @@ These keywords have been used to retrieve relevant memories from the database.
                 LLM_MAX_TOKENS[self.model] if (self.model is not None and self.model in LLM_MAX_TOKENS) else LLM_MAX_TOKENS["DEFAULT"]
             )
 
-        summary = summarize_messages(agent_state=self.agent_state, message_sequence_to_summarize=message_sequence_to_summarize)
+        summary = summarize_messages(agent_state=self.agent_state, message_sequence_to_summarize=message_sequence_to_summarize, existing_file_uris=existing_file_uris)
         self.logger.info(f"Got summary: {summary}")
 
         # Metadata that's useful for the agent to see

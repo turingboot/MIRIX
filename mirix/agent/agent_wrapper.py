@@ -732,6 +732,8 @@ class AgentWrapper():
                           else self.agent_config.get('api_version', '2024-10-01-preview'))
             azure_deployment = (custom_agent_config.get('azure_deployment') if custom_agent_config 
                                else self.agent_config.get('azure_deployment', model_name))
+            context_window = (custom_agent_config.get('context_window', 128000) if custom_agent_config 
+                              else self.agent_config.get('context_window', 128000))
             
             # Get custom API key if provided
             api_key = None
@@ -744,7 +746,7 @@ class AgentWrapper():
                 model=model_name,
                 model_endpoint_type="azure_openai",
                 model_endpoint=endpoint,
-                context_window=128000,
+                context_window=context_window,
                 # Use the new schema fields instead of dynamic assignment
                 api_version=api_version,
                 azure_endpoint=endpoint,
@@ -1817,9 +1819,9 @@ Please perform this analysis and create new memories as appropriate. Provide a d
             # Add conversation to accumulator
             self.temp_message_accumulator.add_user_conversation(message, response_text)
 
-            if not is_screen_monitoring:
-                # we need to call meta memory manager to update the memory
-                self.temp_message_accumulator.absorb_content_into_memory(self.agent_states, user_id=user_id)
+            # if not is_screen_monitoring:
+            #     # we need to call meta memory manager to update the memory
+            #     self.temp_message_accumulator.absorb_content_into_memory(self.agent_states, user_id=user_id)
             
             return response_text
 
