@@ -945,7 +945,18 @@ def test_all_memories():
     print("Starting comprehensive memory system tests...\n")
     
     # Initialize the agent with config file
-    agent = AgentWrapper("mirix/configs/mirix_monitor.yaml")
+    import sys
+    from pathlib import Path
+    
+    if getattr(sys, 'frozen', False):
+        # Running in PyInstaller bundle
+        bundle_dir = Path(sys._MEIPASS)
+        config_path = bundle_dir / 'mirix' / 'configs' / 'mirix_monitor.yaml'
+    else:
+        # Running in development
+        config_path = Path('mirix/configs/mirix_monitor.yaml')
+    
+    agent = AgentWrapper(str(config_path))
     
     # agent.save_agent("./tmp/temp_agent")
 

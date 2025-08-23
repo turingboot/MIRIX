@@ -495,7 +495,21 @@ class ReflexionResponse(BaseModel):
 async def startup_event():
     """Initialize the agent when the server starts"""
     global agent
-    agent = AgentWrapper('mirix/configs/mirix_monitor.yaml')
+    
+    # Handle PyInstaller bundled resources
+    import sys
+    import os
+    from pathlib import Path
+    
+    if getattr(sys, 'frozen', False):
+        # Running in PyInstaller bundle
+        bundle_dir = Path(sys._MEIPASS)
+        config_path = bundle_dir / 'mirix' / 'configs' / 'mirix_monitor.yaml'
+    else:
+        # Running in development
+        config_path = Path('mirix/configs/mirix_monitor.yaml')
+    
+    agent = AgentWrapper(str(config_path))
     print("Agent initialized successfully")
 
 @app.get("/health")

@@ -66,27 +66,42 @@ class Mirix:
         # Use default config if not specified
         if not config_path:
             # Try to find config file in order of preference
-            package_dir = Path(__file__).parent
+            import sys
             
-            # 1. Look in package configs directory (for installed package)
-            config_path = package_dir / "configs" / "mirix.yaml"
-            
-            if not config_path.exists():
-                # 2. Look in parent configs directory (for development)
-                config_path = package_dir.parent / "configs" / "mirix.yaml"
+            if getattr(sys, 'frozen', False):
+                # Running in PyInstaller bundle
+                bundle_dir = Path(sys._MEIPASS)
+                config_path = bundle_dir / "mirix" / "configs" / "mirix.yaml"
                 
                 if not config_path.exists():
-                    # 3. Look in current working directory
-                    config_path = Path("./mirix/configs/mirix.yaml")
+                    raise FileNotFoundError(
+                        f"Could not find mirix.yaml config file in PyInstaller bundle at:\n"
+                        f"  - {config_path}\n"
+                        f"Please ensure config file is properly bundled."
+                    )
+            else:
+                # Running in development - use existing logic
+                package_dir = Path(__file__).parent
+                
+                # 1. Look in package configs directory (for installed package)
+                config_path = package_dir / "configs" / "mirix.yaml"
+                
+                if not config_path.exists():
+                    # 2. Look in parent configs directory (for development)
+                    config_path = package_dir.parent / "configs" / "mirix.yaml"
                     
                     if not config_path.exists():
-                        raise FileNotFoundError(
-                            f"Could not find mirix.yaml config file. Searched in:\n"
-                            f"  - {package_dir / 'configs' / 'mirix.yaml'}\n"
-                            f"  - {package_dir.parent / 'configs' / 'mirix.yaml'}\n"
-                            f"  - {Path('./mirix/configs/mirix.yaml').absolute()}\n"
-                            f"Please provide config_path parameter or ensure config file exists."
-                        )
+                        # 3. Look in current working directory
+                        config_path = Path("./mirix/configs/mirix.yaml")
+                        
+                        if not config_path.exists():
+                            raise FileNotFoundError(
+                                f"Could not find mirix.yaml config file. Searched in:\n"
+                                f"  - {package_dir / 'configs' / 'mirix.yaml'}\n"
+                                f"  - {package_dir.parent / 'configs' / 'mirix.yaml'}\n"
+                                f"  - {Path('./mirix/configs/mirix.yaml').absolute()}\n"
+                                f"Please provide config_path parameter or ensure config file exists."
+                            )
         
         # Initialize the underlying agent (with optional backup restore)
         self._agent = AgentWrapper(str(config_path), load_from=load_from)
