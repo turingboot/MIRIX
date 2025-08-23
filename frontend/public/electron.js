@@ -6,6 +6,7 @@ const isDev = require('electron-is-dev');
 const { spawn, exec } = require('child_process');
 const screenshot = require('screenshot-desktop');
 const http = require('http');
+const https = require('https');
 const NativeCaptureHelper = require('./nativeCaptureHelper');
 
 // Override isDev for packaged apps

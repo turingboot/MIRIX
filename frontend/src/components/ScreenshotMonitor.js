@@ -684,7 +684,81 @@ const ScreenshotMonitor = ({ settings, onMonitoringStatusChange }) => {
               return;
             }
             
+            // Perform similarity check for fullscreen
+            if (!skipSimilarityCheck && lastImageDataRef.current) {
+              // Load the image and create canvas for comparison
+              const imageResult = await window.electronAPI.readImageAsBase64(result.filepath);
+              if (imageResult.success) {
+                const img = new Image();
+                const currentImageData = await new Promise((resolve, reject) => {
+                  img.onload = () => {
+                    try {
+                      const canvas = document.createElement('canvas');
+                      canvas.width = img.naturalWidth;
+                      canvas.height = img.naturalHeight;
+                      const ctx = canvas.getContext('2d');
+                      ctx.drawImage(img, 0, 0);
+                      const imageData = getImageDataFromCanvas(canvas);
+                      resolve(imageData);
+                    } catch (error) {
+                      console.error('Error creating canvas for similarity check:', error);
+                      reject(error);
+                    }
+                  };
+                  img.onerror = (error) => {
+                    console.error('Failed to load image for similarity check:', error);
+                    reject(error);
+                  };
+                  img.src = imageResult.dataUrl;
+                });
+                
+                const similarity = calculateImageSimilarity(lastImageDataRef.current, currentImageData);
+                console.log(`🔍 Fullscreen similarity score: ${similarity.toFixed(4)} (threshold: ${SIMILARITY_THRESHOLD})`);
+                
+                if (similarity >= SIMILARITY_THRESHOLD) {
+                  // Image is too similar, delete it
+                  console.log(`🗑️ Deleting similar fullscreen screenshot: ${result.filepath} (similarity: ${similarity.toFixed(4)})`);
+                  await deleteSimilarScreenshot(result.filepath);
+                  setStatus('monitoring');
+                  return;
+                }
+                
+                // Image is different enough, store for next comparison
+                lastImageDataRef.current = currentImageData;
+              }
+            } else if (!lastImageDataRef.current) {
+              // First screenshot, store image data for future comparisons
+              const imageResult = await window.electronAPI.readImageAsBase64(result.filepath);
+              if (imageResult.success) {
+                const img = new Image();
+                await new Promise((resolve, reject) => {
+                  img.onload = () => {
+                    try {
+                      const canvas = document.createElement('canvas');
+                      canvas.width = img.naturalWidth;
+                      canvas.height = img.naturalHeight;
+                      const ctx = canvas.getContext('2d');
+                      ctx.drawImage(img, 0, 0);
+                      lastImageDataRef.current = getImageDataFromCanvas(canvas);
+                      console.log('✅ Stored first fullscreen image data for future comparisons');
+                      resolve();
+                    } catch (error) {
+                      console.error('Error storing first image data:', error);
+                      reject(error);
+                    }
+                  };
+                  img.onerror = (error) => {
+                    console.error('Failed to load first image:', error);
+                    reject(error);
+                  };
+                  img.src = imageResult.dataUrl;
+                });
+              }
+            }
+            
+            // Image is different enough or first image, send it
             console.log(`📸 Screenshot saved: ${result.filepath} (Full Screen)`);
+            
             // For fullscreen, send as single image with "Full Screen" source
             console.log('📤 Sending fullscreen image to backend:', [result.filepath]);
             const sendResult = await sendScreenshotsToBackend([result.filepath], [t('screenshot.monitoring.fullScreen')]);
