@@ -347,7 +347,7 @@ function App() {
             size="small" 
             showText={false} 
           />
-          <span className="version">v0.1.2</span>
+          <span className="version">v0.1.3</span>
         </div>
         <div className="tabs">
           <button 

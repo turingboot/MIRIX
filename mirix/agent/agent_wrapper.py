@@ -1819,9 +1819,9 @@ Please perform this analysis and create new memories as appropriate. Provide a d
             # Add conversation to accumulator
             self.temp_message_accumulator.add_user_conversation(message, response_text)
 
-            # if not is_screen_monitoring:
-            #     # we need to call meta memory manager to update the memory
-            #     self.temp_message_accumulator.absorb_content_into_memory(self.agent_states, user_id=user_id)
+            if not is_screen_monitoring:
+                # we need to call meta memory manager to update the memory
+                self.temp_message_accumulator.absorb_content_into_memory(self.agent_states, user_id=user_id)
             
             return response_text
 

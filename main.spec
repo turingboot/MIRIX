@@ -6,7 +6,6 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        ('configs', 'configs'),
         ('mirix/prompts/personas', 'mirix/prompts/personas'),
         ('mirix/prompts/system', 'mirix/prompts/system'),
         ('mirix/functions/function_sets', 'mirix/functions/function_sets'),
