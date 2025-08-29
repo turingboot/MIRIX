@@ -255,6 +255,8 @@ class OpenAIClient(LLMClientBase):
         """
         client = OpenAI(**self._prepare_client_kwargs())
         response: ChatCompletion = client.chat.completions.create(**request_data)
+        if not response.object:
+            response.object = 'chat.completion'
         return response.model_dump()
 
     async def request_async(self, request_data: dict) -> dict:
